@@ -1,7 +1,11 @@
 package main
 
-import "log"
+import (
+	"github.com/PQlite/core/api"
+	"github.com/PQlite/core/chain"
+)
 
 func main() {
-	log.Println("Hello, world")
+	mempool := &chain.Mempool{}
+	api.StartServer(mempool)
 }

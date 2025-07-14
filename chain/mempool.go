@@ -16,6 +16,10 @@ func (m *Mempool) Add(tx *crypto.Transaction) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if len(m.TXs) >= 1000 {
+		return errors.New("OOM")
+	}
+
 	for _, txFromMem := range m.TXs {
 		if txFromMem.Signature == tx.Signature {
 			return errors.New("tx is already exists")

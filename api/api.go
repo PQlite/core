@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/PQlite/core/chain"
-	"github.com/PQlite/crypto"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 )
@@ -21,8 +20,12 @@ func StartServer(mempool *chain.Mempool) {
 		return c.SendString(strconv.Itoa(mempool.Len()))
 	})
 
+	app.Get("/block", func(c *fiber.Ctx) error {
+		return c.SendString("test")
+	})
+
 	app.Post("/tx", func(c *fiber.Ctx) error {
-		var tx crypto.Transaction
+		var tx chain.Transaction
 		if err := c.BodyParser(&tx); err != nil {
 			return c.Status(400).SendString("Invalid tx")
 		}

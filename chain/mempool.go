@@ -1,18 +1,21 @@
 package chain
 
 import (
+	"bytes"
 	"errors"
+	"log"
 	"sync"
 
 	"github.com/PQlite/crypto"
+	"github.com/polydawn/refmt/json"
 )
 
 type Mempool struct {
 	mu  sync.Mutex
-	TXs []*crypto.Transaction
+	TXs []*Transaction
 }
 
-func (m *Mempool) Add(tx *crypto.Transaction) error {
+func (m *Mempool) Add(tx *Transaction) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -21,11 +24,16 @@ func (m *Mempool) Add(tx *crypto.Transaction) error {
 	}
 
 	for _, txFromMem := range m.TXs {
-		if txFromMem.Signature == tx.Signature {
+		if bytes.Equal(txFromMem.Signature, tx.Signature) {
 			return errors.New("tx is already exists")
 		}
 	}
-	if !crypto.Verify(*tx) {
+	txForVerify, err := json.Marshal(tx.GetUnsignTransaction())
+	if err != nil {
+		log.Printf("Помилка під час серіалізації транзакції для перевірки: %v", err)
+	}
+
+	if !crypto.Verify(tx.PubKey, txForVerify, tx.Signature) {
 		return errors.New("signature is not valid")
 	}
 	m.TXs = append(m.TXs, tx)

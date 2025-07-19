@@ -2,24 +2,29 @@ package chain
 
 import (
 	"bytes"
+	"crypto/sha3"
+	"encoding/json"
+	"log"
 	"sort"
+
+	"github.com/PQlite/crypto"
 )
 
 type Block struct {
-	Height       uint64         // Номер блоку
+	Height       uint32         // Номер блоку
 	Timestamp    int64          // UNIX час
 	PrevHash     []byte         // Хеш попереднього блоку
 	Hash         []byte         // Хеш цього блоку (розраховується по іншим полям)
-	Proposer     string         // Адреса або публічний ключ того, хто створив блок
+	Proposer     []byte         // Адреса або публічний ключ того, хто створив блок
 	Signature    []byte         // Підпис Proposer'а на блоку
 	Transactions []*Transaction // Список транзакцій
 }
 
 type BlockForSign struct {
-	PrevHeight   int
+	PrevHeight   uint32
 	Timestamp    int64
 	PrevHash     []byte
-	Proposer     string
+	Proposer     []byte
 	Transactions []*Transaction
 }
 
@@ -31,10 +36,27 @@ func (b *BlockForSign) sortTransactions() {
 	})
 }
 
-// func (b *BlockForSign) Sign() (Block, error) {
-// 	BlockForSignBytes, err := json.Marshal(*b)
-// 	if err != nil {
-// 		log.Println("помилка обробки json.Marshal: ", err)
-// 		return Block{}, nil
-// 	}
-// }
+func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
+	BlockForSignBytes, err := json.Marshal(*b)
+	if err != nil {
+		log.Println("помилка обробки json.Marshal: ", err)
+		return Block{}, err
+	}
+	sig, err := crypto.Sign(binPriv, BlockForSignBytes)
+	if err != nil {
+		log.Println("err, ", err)
+		return Block{}, err
+	}
+
+	blockHash := sha3.Sum224(BlockForSignBytes)
+
+	return Block{
+		Height:       uint32(b.PrevHeight) + 1,
+		Timestamp:    b.Timestamp,
+		PrevHash:     b.PrevHash,
+		Hash:         blockHash[:],
+		Proposer:     b.Proposer,
+		Signature:    sig,
+		Transactions: b.Transactions,
+	}, nil
+}

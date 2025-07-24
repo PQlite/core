@@ -33,7 +33,8 @@ func (m *Mempool) Add(tx *Transaction) error {
 		log.Printf("Помилка під час серіалізації транзакції для перевірки: %v", err)
 	}
 
-	if !crypto.Verify(tx.PubKey, txForVerify, tx.Signature) {
+	isValid, err := crypto.Verify(tx.PubKey, txForVerify, tx.Signature)
+	if !isValid || err != nil {
 		return errors.New("signature is not valid")
 	}
 	m.TXs = append(m.TXs, tx)

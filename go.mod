@@ -3,7 +3,7 @@ module github.com/PQlite/core
 go 1.24.5
 
 require (
-	github.com/PQlite/crypto v0.0.4
+	github.com/PQlite/crypto v0.0.5-0.20250720122300-266869b5900f
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/gofiber/fiber/v2 v2.52.8
 	github.com/libp2p/go-libp2p v0.42.1-0.20250702212416-7b7c3ed4ce04
@@ -119,7 +119,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
-	golang.org/x/exp v0.0.0-20250717185816-542afb5b7346 // indirect
+	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792 // indirect
 	golang.org/x/mod v0.26.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect

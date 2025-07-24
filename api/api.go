@@ -1,3 +1,4 @@
+// Package api створений для роботи з користувачами поза p2p мережі
 package api
 
 import (

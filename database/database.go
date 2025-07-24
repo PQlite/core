@@ -45,7 +45,7 @@ func (bdb *BlockDB) SaveBlock(block *chain.Block) error {
 	})
 }
 
-func (bdb *BlockDB) GetBlock(height uint64) (*chain.Block, error) {
+func (bdb *BlockDB) GetBlock(height uint32) (*chain.Block, error) {
 	var block chain.Block
 
 	err := bdb.db.View(func(txn *badger.Txn) error {
@@ -66,8 +66,8 @@ func (bdb *BlockDB) GetBlock(height uint64) (*chain.Block, error) {
 	return &block, nil
 }
 
-func (bdb *BlockDB) GetLastHeight() (uint64, error) {
-	var height uint64
+func (bdb *BlockDB) GetLastHeight() (uint32, error) {
+	var height uint32
 
 	err := bdb.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte("lastHeight"))
@@ -75,7 +75,7 @@ func (bdb *BlockDB) GetLastHeight() (uint64, error) {
 			return err
 		}
 		return item.Value(func(val []byte) error {
-			h, err := strconv.ParseUint(string(val), 10, 64)
+			h, err := strconv.ParseUint(string(val), 10, 32)
 			if err != nil {
 				return err
 			}

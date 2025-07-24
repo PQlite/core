@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha3"
 	"encoding/json"
-	"log"
 	"sort"
 
 	"github.com/PQlite/crypto"
@@ -21,7 +20,7 @@ type Block struct {
 }
 
 type BlockForSign struct {
-	PrevHeight   uint32
+	Height       uint32
 	Timestamp    int64
 	PrevHash     []byte
 	Proposer     []byte
@@ -37,21 +36,22 @@ func (b *BlockForSign) sortTransactions() {
 }
 
 func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
+	b.Height++ // Я точно не знаю, але треба додавати +1, щоб висота була на одну більше ніж попередній
+	b.sortTransactions()
+
 	BlockForSignBytes, err := json.Marshal(*b)
 	if err != nil {
-		log.Println("помилка обробки json.Marshal: ", err)
 		return Block{}, err
 	}
 	sig, err := crypto.Sign(binPriv, BlockForSignBytes)
 	if err != nil {
-		log.Println("err, ", err)
 		return Block{}, err
 	}
 
 	blockHash := sha3.Sum224(BlockForSignBytes)
 
 	return Block{
-		Height:       uint32(b.PrevHeight) + 1,
+		Height:       b.Height,
 		Timestamp:    b.Timestamp,
 		PrevHash:     b.PrevHash,
 		Hash:         blockHash[:],
@@ -59,4 +59,22 @@ func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
 		Signature:    sig,
 		Transactions: b.Transactions,
 	}, nil
+}
+
+func (b *Block) Verify() (bool, error) {
+	blockForVerify := BlockForSign{
+		Height:       b.Height,
+		Timestamp:    b.Timestamp,
+		PrevHash:     b.PrevHash,
+		Proposer:     b.Proposer,
+		Transactions: b.Transactions,
+	}
+	blockForVerify.sortTransactions()
+
+	binBlockForVerify, err := json.Marshal(blockForVerify)
+	if err != nil {
+		return false, err
+	}
+
+	return crypto.Verify(b.Proposer, binBlockForVerify, b.Signature)
 }

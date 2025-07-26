@@ -1,2 +1,2 @@
 # TODO
- [ ] виправити типи в database/database.go (блок використовує uint32 для висоти, а strconv.FromUint потребує uint64)
+ [ ] виправити типи в database/database.go (блок використовує uint32 для висоти, а strconv.FormatUint потребує uint64)

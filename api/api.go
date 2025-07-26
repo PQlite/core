@@ -6,11 +6,12 @@ import (
 	"strconv"
 
 	"github.com/PQlite/core/chain"
+	"github.com/PQlite/core/database"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 )
 
-func StartServer(mempool *chain.Mempool) {
+func StartServer(mempool *chain.Mempool, bs *database.BlockStorage) {
 	app := fiber.New()
 
 	app.Use(logger.New(logger.Config{
@@ -21,8 +22,26 @@ func StartServer(mempool *chain.Mempool) {
 		return c.SendString(strconv.Itoa(mempool.Len()))
 	})
 
-	app.Get("/block", func(c *fiber.Ctx) error {
-		return c.SendString("test")
+	app.Get("/block/:id", func(c *fiber.Ctx) error {
+		blockheightStr := c.Params("id")
+
+		// Конвертація в uint32
+		blockHeight64, err := strconv.ParseUint(blockheightStr, 10, 32)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"error": "Invalid ID format",
+			})
+		}
+		blockHeight := uint32(blockHeight64)
+
+		block, err := bs.GetBlock(blockHeight)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				// TODO: прибрати повертання внутрішньої помилка
+				"error": "помилка отримання блоку",
+			})
+		}
+		return c.JSON(block)
 	})
 
 	app.Post("/tx", func(c *fiber.Ctx) error {

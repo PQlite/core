@@ -19,7 +19,10 @@ func StartServer(mempool *chain.Mempool, bs *database.BlockStorage) {
 	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString(strconv.Itoa(mempool.Len()))
+		return c.Status(200).JSON(fiber.Map{
+			"status": "ok",
+			"error":  "",
+		})
 	})
 
 	app.Get("/block/:id", func(c *fiber.Ctx) error {
@@ -29,7 +32,8 @@ func StartServer(mempool *chain.Mempool, bs *database.BlockStorage) {
 		blockHeight64, err := strconv.ParseUint(blockheightStr, 10, 32)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{
-				"error": "Invalid ID format",
+				"status": "not ok, bro",
+				"error":  "Invalid ID format",
 			})
 		}
 		blockHeight := uint32(blockHeight64)
@@ -38,7 +42,8 @@ func StartServer(mempool *chain.Mempool, bs *database.BlockStorage) {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{
 				// TODO: прибрати повертання внутрішньої помилка
-				"error": "помилка отримання блоку",
+				"status": "not ok, bro",
+				"error":  "помилка отримання блоку",
 			})
 		}
 		return c.JSON(block)

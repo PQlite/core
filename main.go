@@ -3,7 +3,6 @@ package main
 
 import (
 	"log"
-	"time"
 
 	"github.com/PQlite/core/api"
 	"github.com/PQlite/core/chain"
@@ -22,6 +21,5 @@ func main() {
 
 	// TODO: чому mempool передаєтся з &, а bs без?
 	go api.StartServer(&mempool, bs)
-	time.Sleep(time.Second * 10)
 	p2p.Node(&mempool, bs)
 }

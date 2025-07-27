@@ -25,6 +25,7 @@ func InitDB() (*BlockStorage, error) {
 	if dbExists {
 		return bs, nil
 	} else {
+		// genesis block
 		block := chain.Block{
 			Height:       0,
 			Timestamp:    0,

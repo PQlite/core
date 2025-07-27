@@ -1,94 +1,102 @@
-// Package database write and read blocks from database
+// Package database тут усе для роботи з базою даних
 package database
 
 import (
-	"bytes"
-	"encoding/gob"
-	"strconv"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/PQlite/core/chain"
 	"github.com/dgraph-io/badger/v4"
 )
 
-type BlockDB struct {
+type BlockStorage struct {
 	db *badger.DB
 }
 
-func NewBlockDB(path string) (*BlockDB, error) {
-	opts := badger.DefaultOptions(path)
-	opts.Logger = nil // Прибрати спам у stdout
-
-	db, err := badger.Open(opts)
+func InitDB() (*BlockStorage, error) {
+	dbExists := checkDBExists("/tmp/badger")
+	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
+	bs := &BlockStorage{db: db}
 	if err != nil {
 		return nil, err
 	}
-
-	return &BlockDB{db: db}, nil
+	if dbExists {
+		return bs, nil
+	} else {
+		block := chain.Block{
+			Height:       0,
+			Timestamp:    0,
+			PrevHash:     []byte(""),
+			Hash:         []byte(""),
+			Proposer:     []byte(""),
+			Signature:    []byte(""),
+			Transactions: []*chain.Transaction{},
+		}
+		bs.SaveBlock(&block)
+	}
+	return bs, nil
 }
 
-func (bdb *BlockDB) SaveBlock(block *chain.Block) error {
-	return bdb.db.Update(func(txn *badger.Txn) error {
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		if err := enc.Encode(block); err != nil {
-			return err
-		}
-
-		// Ключ по висоті
-		key := []byte("block:" + strconv.FormatUint(block.Height, 10))
-		if err := txn.Set(key, buf.Bytes()); err != nil {
-			return err
-		}
-
-		// Оновити останню висоту
-		return txn.Set([]byte("lastHeight"), []byte(strconv.FormatUint(block.Height, 10)))
-	})
+func (bs *BlockStorage) Close() error {
+	return bs.db.Close()
 }
 
-func (bdb *BlockDB) GetBlock(height uint64) (*chain.Block, error) {
+func (bs *BlockStorage) SaveBlock(block *chain.Block) error {
+	height := fmt.Sprintf("block:%d", block.Height)
+	data, err := json.Marshal(block)
+	if err != nil {
+		return err
+	}
+
+	txn := bs.db.NewTransaction(true)
+	defer txn.Discard()
+
+	err = txn.Set([]byte(height), data)
+	if err != nil {
+		return err
+	}
+
+	if err = txn.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (bs *BlockStorage) GetBlock(height uint32) (*chain.Block, error) {
 	var block chain.Block
+	key := fmt.Sprintf("block:%d", height)
 
-	err := bdb.db.View(func(txn *badger.Txn) error {
-		key := []byte("block:" + strconv.FormatUint(height, 10))
-		item, err := txn.Get(key)
+	err := bs.db.View(func(txn *badger.Txn) error {
+		data, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
 		}
 
-		return item.Value(func(val []byte) error {
-			dec := gob.NewDecoder(bytes.NewReader(val))
-			return dec.Decode(&block)
+		return data.Value(func(val []byte) error {
+			return json.Unmarshal(val, &block)
 		})
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	return &block, nil
 }
 
-func (bdb *BlockDB) GetLastHeight() (uint64, error) {
-	var height uint64
-
-	err := bdb.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte("lastHeight"))
-		if err != nil {
-			return err
-		}
-		return item.Value(func(val []byte) error {
-			h, err := strconv.ParseUint(string(val), 10, 64)
-			if err != nil {
-				return err
-			}
-			height = h
-			return nil
-		})
-	})
-	if err != nil {
-		return 0, err
+func checkDBExists(dbPath string) bool {
+	// Перевіряємо наявність MANIFEST файлу BadgerDB
+	manifestPath := filepath.Join(dbPath, "MANIFEST")
+	if _, err := os.Stat(manifestPath); err == nil {
+		return true
 	}
-	return height, nil
-}
 
-func (bdb *BlockDB) Close() error {
-	return bdb.db.Close()
+	// Або перевіряємо чи директорія не пуста
+	entries, err := os.ReadDir(dbPath)
+	if err != nil {
+		return false
+	}
+
+	return len(entries) > 0
 }

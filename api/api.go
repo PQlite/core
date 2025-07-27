@@ -1,4 +1,5 @@
 // Package api створений для роботи з користувачами поза p2p мережі
+// Package api provides the HTTP API for interacting with the PQlite blockchain node.
 package api
 
 import (
@@ -41,7 +42,6 @@ func StartServer(mempool *chain.Mempool, bs *database.BlockStorage) {
 		block, err := bs.GetBlock(blockHeight)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{
-				// TODO: прибрати повертання внутрішньої помилка
 				"status": "not ok, bro",
 				"error":  "помилка отримання блоку",
 			})
@@ -60,5 +60,6 @@ func StartServer(mempool *chain.Mempool, bs *database.BlockStorage) {
 		return c.SendString("ok")
 	})
 
-	log.Fatal(app.Listen(":8080"))
+	// TODO: вибрати порт для api
+	log.Fatal(app.Listen(":0"))
 }

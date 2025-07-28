@@ -19,7 +19,6 @@ func main() {
 
 	mempool := chain.Mempool{}
 
-	// TODO: чому mempool передаєтся з &, а bs без?
 	go api.StartServer(&mempool, bs)
 	p2p.Node(&mempool, bs)
 }

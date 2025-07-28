@@ -1,4 +1,5 @@
 // Package database тут усе для роботи з базою даних
+// TODO: треба зрозуміти, як працювати з таблицями в цій базі
 package database
 
 import (

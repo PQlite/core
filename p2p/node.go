@@ -38,8 +38,6 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 	}
 	defer node.Close()
 
-	log.Println(node.Addrs())
-
 	// Підключення до bootstrap
 	connectingToBootstrap(node, ctx)
 
@@ -52,7 +50,6 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 		panic(err)
 	}
 
-	log.Println(2)
 	for p := range peerChan {
 		if p.ID == node.ID() {
 			continue
@@ -60,8 +57,11 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 			log.Println(p.ID)
 			ch := ping.Ping(ctx, node, p.ID)
 			res := <-ch
-			log.Println(res.RTT)
-			log.Println("ping")
+			if res.Error != nil {
+				log.Println("err")
+			} else {
+				log.Println(res.RTT)
+			}
 		}
 	}
 }

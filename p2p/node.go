@@ -2,7 +2,11 @@ package p2p
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -42,26 +46,74 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 	connectingToBootstrap(node, ctx)
 
 	// discovery
-	routingDiscovery := discovery_routing.NewRoutingDiscovery(kdht)
-	util.Advertise(ctx, routingDiscovery, "123hello1", discovery.TTL(10*time.Second))
+	go peerDiscovery(node, ctx, kdht)
 
-	peerChan, err := routingDiscovery.FindPeers(ctx, "123hello1", discovery.TTL(10*time.Second))
+	// init topic
+	topic, err := topicInit(ctx, node)
 	if err != nil {
 		panic(err)
 	}
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		for {
+			<-ticker.C
+			message := Message{Text: "hello", Timestrmp: time.Now().Unix()}
+			topic.broadcast(message, ctx)
+		}
+	}()
 
-	for p := range peerChan {
-		if p.ID == node.ID() {
-			continue
-		} else {
-			log.Println(p.ID)
-			ch := ping.Ping(ctx, node, p.ID)
-			res := <-ch
-			if res.Error != nil {
-				log.Println("err")
-			} else {
-				log.Println(res.RTT)
+	// Читання вхідних повідомлень
+	go func() {
+		for {
+			msg, err := topic.sub.Next(ctx)
+			if err != nil {
+				panic(err)
 			}
+
+			fmt.Println("Отримано:", string(msg.Data))
+		}
+	}()
+
+	// wait for a SIGINT or SIGTERM signal
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	<-ch
+	fmt.Println("Received signal, shutting down...")
+}
+
+func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
+	ticker := time.NewTicker(10 * time.Second) // TODO: збільшити значення на релізі
+
+	routingDiscovery := discovery_routing.NewRoutingDiscovery(kdht)
+	util.Advertise(ctx, routingDiscovery, "123hello1", discovery.TTL(10*time.Second))
+
+	for {
+		select {
+		case <-ticker.C:
+
+			peerChan, err := routingDiscovery.FindPeers(ctx, "123hello1", discovery.TTL(10*time.Second))
+			if err != nil {
+				panic(err)
+			}
+
+			for p := range peerChan {
+				go func() {
+					if p.ID == node.ID() {
+						return
+					} else {
+						log.Println(p.ID)
+						ch := ping.Ping(ctx, node, p.ID)
+						res := <-ch
+						if res.Error != nil {
+							log.Println("err")
+						} else {
+							log.Println(res.RTT)
+						}
+					}
+				}()
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

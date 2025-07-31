@@ -26,6 +26,11 @@ const (
 )
 
 type Message struct {
+	Text      string `json:"text"`
+	Timestrmp int64  `json"timestamp"`
+}
+
+type Message1 struct {
 	Type      MessageType `json:"type"` // Тип повідомлення
 	From      string      `json:"from"` // ID відправника
 	To        string      `json:"to"`   // ID отримувача, але якщо порожнє - для всіх

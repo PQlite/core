@@ -83,7 +83,7 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 			}
 			latency := time.Now().UnixMilli() - data.Timestamp
 
-			fmt.Println("Отримано:", data.Text, " за ", latency)
+			fmt.Println("Отримано:", data.Text, " за ", latency, "ms")
 		}
 	}()
 
@@ -117,9 +117,7 @@ func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
 						log.Println(p.ID)
 						ch := ping.Ping(ctx, node, p.ID)
 						res := <-ch
-						if res.Error != nil {
-							log.Println("err")
-						} else {
+						if res.Error == nil {
 							log.Println(res.RTT)
 						}
 					}

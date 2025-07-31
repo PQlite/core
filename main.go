@@ -2,8 +2,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/PQlite/core/api"
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/core/database"
@@ -11,14 +9,15 @@ import (
 )
 
 func main() {
-	bs, err := database.InitDB()
-	if err != nil {
-		log.Println("помилка initdb ", err)
-		return
-	}
+	// bs, err := database.InitDB()
+	// if err != nil {
+	// 	log.Println("помилка initdb ", err)
+	// 	return
+	// }
+	bs := database.BlockStorage{}
 
 	mempool := chain.Mempool{}
 
-	go api.StartServer(&mempool, bs)
-	p2p.Node(&mempool, bs)
+	go api.StartServer(&mempool, &bs)
+	p2p.Node(&mempool, &bs)
 }

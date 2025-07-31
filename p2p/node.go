@@ -26,6 +26,7 @@ import (
 func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 	ctx := context.Background()
 	var kdht *dht.IpfsDHT
+	messageText := "main"
 
 	node, err := libp2p.New(
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
@@ -59,7 +60,7 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 		for {
 			<-ticker.C
 
-			message := Message{Text: "main", Timestamp: time.Now().UnixMilli()}
+			message := Message{Text: messageText, Timestamp: time.Now().UnixMilli()}
 			topic.broadcast(message, ctx)
 		}
 	}()
@@ -76,6 +77,9 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 			err = json.Unmarshal(msg.Data, &data)
 			if err != nil {
 				panic(err)
+			}
+			if data.Text == messageText {
+				continue
 			}
 			latency := time.Now().UnixMilli() - data.Timestamp
 

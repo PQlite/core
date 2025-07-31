@@ -45,13 +45,14 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 
 	// discovery
 	routingDiscovery := discovery_routing.NewRoutingDiscovery(kdht)
-	util.Advertise(ctx, routingDiscovery, "123hello")
+	util.Advertise(ctx, routingDiscovery, "123hello1", discovery.TTL(10*time.Second))
 
-	peerChan, err := routingDiscovery.FindPeers(ctx, "123hello", discovery.TTL(10*time.Second))
+	peerChan, err := routingDiscovery.FindPeers(ctx, "123hello1", discovery.TTL(10*time.Second))
 	if err != nil {
 		panic(err)
 	}
 
+	log.Println(2)
 	for p := range peerChan {
 		if p.ID == node.ID() {
 			continue
@@ -59,8 +60,8 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 			log.Println(p.ID)
 			ch := ping.Ping(ctx, node, p.ID)
 			res := <-ch
-			log.Println(res)
-
+			log.Println(res.RTT)
+			log.Println("ping")
 		}
 	}
 }

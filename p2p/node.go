@@ -26,7 +26,7 @@ import (
 func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 	ctx := context.Background()
 	var kdht *dht.IpfsDHT
-	messageText := "main"
+	messageText := "second"
 
 	node, err := libp2p.New(
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
@@ -55,17 +55,18 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 	if err != nil {
 		panic(err)
 	}
+	// TODO: зробити справжню відправку повідомлень
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		for {
 			<-ticker.C
-
 			message := Message{Text: messageText, Timestamp: time.Now().UnixMilli()}
 			topic.broadcast(message, ctx)
 		}
 	}()
 
 	// Читання вхідних повідомлень
+	// TODO: Зробити обробку прийнятих даних
 	go func() {
 		for {
 			msg, err := topic.sub.Next(ctx)

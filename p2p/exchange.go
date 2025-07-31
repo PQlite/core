@@ -41,3 +41,5 @@ func (t Topic) broadcast(message Message, ctx context.Context) error {
 	}
 	return t.topic.Publish(ctx, data)
 }
+
+// TODO: зробити відправку повідомлень на 1-2 ноди, для sync з blockchain

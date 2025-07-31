@@ -27,7 +27,7 @@ const (
 
 type Message struct {
 	Text      string `json:"text"`
-	Timestrmp int64  `json"timestamp"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 type Message1 struct {

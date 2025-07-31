@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -57,7 +58,8 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 		ticker := time.NewTicker(10 * time.Second)
 		for {
 			<-ticker.C
-			message := Message{Text: "hello", Timestrmp: time.Now().Unix()}
+
+			message := Message{Text: "main", Timestamp: time.Now().UnixMilli()}
 			topic.broadcast(message, ctx)
 		}
 	}()
@@ -70,7 +72,14 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 				panic(err)
 			}
 
-			fmt.Println("Отримано:", string(msg.Data))
+			var data Message
+			err = json.Unmarshal(msg.Data, &data)
+			if err != nil {
+				panic(err)
+			}
+			latency := time.Now().UnixMilli() - data.Timestamp
+
+			fmt.Println("Отримано:", data.Text, " за ", latency)
 		}
 	}()
 

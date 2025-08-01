@@ -44,6 +44,7 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 func (s *Server) setupRoutes() {
 	s.app.Get("/", s.handleGetStatus)
 	s.app.Get("/block/:id", s.handleGetBlock)
+	s.app.Get("/txs", s.handleGetMempoolLen)
 	s.app.Post("/tx", s.handlePostTx)
 }
 
@@ -94,6 +95,10 @@ func (s *Server) handlePostTx(c *fiber.Ctx) error {
 		"status": "ok",
 		"error":  "",
 	})
+}
+
+func (s *Server) handleGetMempoolLen(c *fiber.Ctx) error {
+	return c.SendString(strconv.Itoa(len(s.mempool.TXs)))
 }
 
 // Start запускає HTTP-сервер.

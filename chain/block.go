@@ -38,7 +38,7 @@ func (b *BlockForSign) sortTransactions() {
 }
 
 func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
-	b.Height++ // Я точно не знаю, але треба додавати +1, щоб висота була на одну більше ніж попередній
+	b.Height++ // NOTE: Я точно не знаю, але треба додавати +1, щоб висота була на одну більше ніж попередній
 	b.sortTransactions()
 
 	BlockForSignBytes, err := json.Marshal(*b)
@@ -63,7 +63,7 @@ func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
 	}, nil
 }
 
-func (b *Block) Verify() (bool, error) {
+func (b *Block) Verify() bool {
 	blockForVerify := BlockForSign{
 		Height:       b.Height,
 		Timestamp:    b.Timestamp,
@@ -72,11 +72,16 @@ func (b *Block) Verify() (bool, error) {
 		Transactions: b.Transactions,
 	}
 	blockForVerify.sortTransactions()
+	// FIXME: тут повинна бути ще перевірка кожної транзакції, а не тільки самого блоку
 
 	binBlockForVerify, err := json.Marshal(blockForVerify)
 	if err != nil {
-		return false, err
+		return false
 	}
 
-	return crypto.Verify(b.Proposer, binBlockForVerify, b.Signature)
+	res, err := crypto.Verify(b.Proposer, binBlockForVerify, b.Signature)
+	if err != nil {
+		return false
+	}
+	return res
 }

@@ -87,6 +87,33 @@ func (bs *BlockStorage) GetBlock(height uint32) (*chain.Block, error) {
 	return &block, nil
 }
 
+func (bs *BlockStorage) GetLastBlock() (*chain.Block, error) {
+	var lastBlock chain.Block
+	err := bs.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true // Ітеруємо у зворотному порядку
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		prefix := []byte("block:")
+		// Шукаємо до останнього можливого ключа з префіксом block:
+		it.Seek(append(prefix, 0xFF))
+
+		for it.ValidForPrefix(prefix) {
+			item := it.Item()
+			return item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &lastBlock)
+			})
+		}
+
+		return fmt.Errorf("no blocks found")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &lastBlock, nil
+}
+
 func checkDBExists(dbPath string) bool {
 	// Перевіряємо наявність MANIFEST файлу BadgerDB
 	manifestPath := filepath.Join(dbPath, "MANIFEST")

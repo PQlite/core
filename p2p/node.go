@@ -9,7 +9,6 @@ import (
 
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/core/database"
-	"github.com/PQlite/crypto"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -28,6 +27,7 @@ type Node struct {
 	mempool *chain.Mempool
 	bs      *database.BlockStorage
 	kdht    *dht.IpfsDHT
+	keys    *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
 }
 
 const (
@@ -71,6 +71,12 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		return Node{}, err
 	}
 
+	keys, err := loadKeys()
+	if err != nil {
+		log.Println("помилка завантаження ключів")
+		return Node{}, err
+	}
+
 	for _, p := range node.Addrs() {
 		log.Println(p.String(), node.ID().String())
 	}
@@ -83,17 +89,20 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		mempool: mempool,
 		bs:      bs,
 		kdht:    kdht,
+		keys:    keys,
 	}, nil
 }
 
 // Start Запуск p2p сервер
 func (n *Node) Start() {
 	// Підключення до bootstrap
-	connectingToBootstrap(n.host, n.ctx)
+	n.connectingToBootstrap()
 
-	go peerDiscovery(n.host, n.ctx, n.kdht)
+	go n.peerDiscovery()
 	go n.handleTxCh()
 	go n.handleBroadcastMessages()
+
+	n.syncBlockchain()
 
 	<-n.ctx.Done()
 	n.host.Close()
@@ -119,31 +128,13 @@ func (n *Node) handleTxCh() {
 					continue
 				}
 
-				// TODO: треба зробити адекватоно, а це тільки для тесту
-				pub, priv, err := crypto.Create()
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-				binPriv, err := priv.MarshalBinary()
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-				binPub, err := pub.MarshalBinary()
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-				//////////////////////////////////////////////
-
 				um := UnsignMessage{
 					Type:      MsgNewTransaction,
 					Timestamp: time.Now().UnixMilli(),
 					Data:      txBytes,
-					Pub:       binPub,
+					Pub:       n.keys.Pub,
 				}
-				m, err := um.sign(binPriv)
+				m, err := um.sign(n.keys.Priv)
 				if err != nil {
 					log.Println("sing error: ", err)
 					continue
@@ -213,45 +204,77 @@ func (n *Node) handleBroadcastMessages() {
 	}
 }
 
-func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
+func (n *Node) peerDiscovery() {
 	ticker := time.NewTicker(120 * time.Second)
 
-	routingDiscovery := discovery_routing.NewRoutingDiscovery(kdht)
-	util.Advertise(ctx, routingDiscovery, ns)
+	routingDiscovery := discovery_routing.NewRoutingDiscovery(n.kdht)
+	util.Advertise(n.ctx, routingDiscovery, ns)
 
 	for {
 		select {
 		case <-ticker.C:
-			peerChan, err := routingDiscovery.FindPeers(ctx, ns)
+			peerChan, err := routingDiscovery.FindPeers(n.ctx, ns)
 			if err != nil {
 				panic(err)
 			}
 
 			for p := range peerChan {
-				if p.ID != node.ID() {
-					ch := ping.Ping(ctx, node, p.ID)
+				if p.ID != n.host.ID() {
+					ch := ping.Ping(n.ctx, n.host, p.ID)
 					res := <-ch
 					if res.Error == nil {
 						log.Println(res.RTT)
 					}
 				}
 			}
-		case <-ctx.Done():
+		case <-n.ctx.Done():
 			return
 		}
 	}
 }
 
-func connectingToBootstrap(node host.Host, ctx context.Context) {
+func (n *Node) connectingToBootstrap() {
 	// TODO: зробити bootstrap
-	pi, err := peer.AddrInfoFromString("")
-	if err != nil {
-		log.Println("помилка отримання адреси bootstrap: ", err)
+	// pi, err := peer.AddrInfoFromString("")
+	for _, addr := range dht.DefaultBootstrapPeers {
+		pi, err := peer.AddrInfoFromP2pAddr(addr)
+		if err != nil {
+			log.Println("помилка отримання адреси bootstrap: ", err)
+		}
+		err = n.host.Connect(n.ctx, *pi)
+		if err != nil {
+			log.Println("помилка підключення до bootstrap: ", err)
+		} else {
+			log.Println("підключено до ", pi.ID)
+		}
 	}
-	err = node.Connect(ctx, *pi)
-	if err != nil {
-		log.Println("помилка підключення до bootstrap: ", err)
-	} else {
-		log.Println("підключено до ", pi.ID)
+}
+
+// NOTE: тут я використав broadcast, що є дуже не дуже для sync блоків
+func (n *Node) syncBlockchain() {
+	for {
+		localBlockHeight, err := n.bs.GetLastBlock()
+		if err != nil {
+			log.Println("помилка бази даних: ", err)
+		}
+
+		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
+		if err != nil {
+			panic(err)
+		}
+
+		m := Message{
+			Type:      MsgRequestBlock,
+			Timestamp: time.Now().UnixMilli(),
+			Data:      data,
+			Pub:       n.keys.Pub,
+		}
+		um := m.getUnsignMessage()
+		signM, err := um.sign(n.keys.Priv)
+		if err != nil {
+			panic(err)
+		}
+		n.topic.broadcast(signM, n.ctx)
+		time.Sleep(1 * time.Second)
 	}
 }

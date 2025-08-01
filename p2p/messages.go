@@ -9,12 +9,6 @@ import (
 type MessageType string
 
 const (
-	// NOTE: вони не потрібні, тому що в libp2p вже все є
-	// Мережеві повідомлення
-	MsgPing     MessageType = "ping"
-	MsgPong     MessageType = "pong"
-	MsgPeerList MessageType = "peerList"
-
 	// Транзакції
 	MsgNewTransaction MessageType = "newTransaction"
 

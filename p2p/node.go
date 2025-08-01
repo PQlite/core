@@ -43,7 +43,20 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 			}
 			return kdht, nil
 		}),
-		libp2p.ListenAddrStrings("/ip6/::/tcp/0"),
+
+		libp2p.ListenAddrStrings("/ip6/::/tcp/0", "/ip4/0.0.0.0/tcp/0"),
+		// NAT traversal (UPnP, NAT-PMP, AutoNAT)
+		libp2p.NATPortMap(), // Пробує пробросити порт (UPnP/NAT-PMP)
+		// TODO: реалізувати цю функцію
+		// libp2p.EnableAutoRelayWithPeerSource(DHTPeerSource(kdht)),
+		libp2p.EnableAutoNATv2(), // Дозволяє тобі самому бути relay source (для AutoNAT)
+
+		// Relay
+		libp2p.EnableRelay(), // Дозволити relay (старий механізм, потрібний для AutoRelay)
+		libp2p.EnableRelayService(),
+
+		libp2p.EnableHolePunching(),
+		libp2p.EnableNATService(),
 	)
 	if err != nil {
 		return Node{}, err

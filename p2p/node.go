@@ -174,16 +174,16 @@ func (n *Node) handleMessages() {
 }
 
 func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
-	ticker := time.NewTicker(10 * time.Second) // TODO: збільшити значення на релізі
+	ticker := time.NewTicker(120 * time.Second)
 
 	routingDiscovery := discovery_routing.NewRoutingDiscovery(kdht)
-	util.Advertise(ctx, routingDiscovery, "123hello1", discovery.TTL(10*time.Second))
+	util.Advertise(ctx, routingDiscovery, "123hello1")
 
 	for {
 		select {
 		case <-ticker.C:
 
-			peerChan, err := routingDiscovery.FindPeers(ctx, "123hello1", discovery.TTL(10*time.Second))
+			peerChan, err := routingDiscovery.FindPeers(ctx, "123hello1")
 			if err != nil {
 				panic(err)
 			}

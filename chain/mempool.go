@@ -4,12 +4,12 @@ package chain
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"log"
 	"sync"
 
 	"github.com/PQlite/crypto"
-	"github.com/polydawn/refmt/json"
 )
 
 type Mempool struct {
@@ -30,6 +30,7 @@ func (m *Mempool) Add(tx *Transaction) error {
 			return errors.New("tx is already exists")
 		}
 	}
+
 	txForVerify, err := json.Marshal(tx.GetUnsignTransaction())
 	if err != nil {
 		log.Printf("Помилка під час серіалізації транзакції для перевірки: %v", err)

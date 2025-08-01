@@ -2,22 +2,14 @@
 // including blocks, transactions, and consensus logic.
 package chain
 
-type UnsignTransaction struct {
-	From      string  `json:"from"`
-	To        string  `json:"to"`
-	Amount    float32 `json:"amount"`
-	Timestamp int64   `json:"timestamp"`
-	Nonce     int     `json:"nonce"`
-}
-
 type Transaction struct {
 	From      string  `json:"from"`
 	To        string  `json:"to"`
 	Amount    float32 `json:"amount"`
 	Timestamp int64   `json:"timestamp"`
 	Nonce     int     `json:"nonce"`
-	Signature []byte  `json:"signature"`
 	PubKey    []byte  `json:"pubkey"`
+	Signature []byte  `json:"signature"`
 }
 
 type Wallet struct {
@@ -25,12 +17,13 @@ type Wallet struct {
 	Pub  string `json:"pub"`
 }
 
-func (t Transaction) GetUnsignTransaction() UnsignTransaction {
-	return UnsignTransaction{
+func (t Transaction) GetUnsignTransaction() *Transaction {
+	return &Transaction{
 		From:      t.From,
 		To:        t.To,
 		Amount:    t.Amount,
 		Timestamp: t.Timestamp,
 		Nonce:     t.Nonce,
+		PubKey:    t.PubKey,
 	}
 }

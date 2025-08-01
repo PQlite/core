@@ -9,6 +9,7 @@ import (
 
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/core/database"
+	"github.com/PQlite/crypto"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/discovery"
@@ -65,7 +66,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 	}, nil
 }
 
-// Запуск p2p сервер
+// Start Запуск p2p сервер
 func (n *Node) Start() {
 	// Підключення до bootstrap
 	connectingToBootstrap(n.host, n.ctx)
@@ -86,7 +87,7 @@ func (n *Node) handleTxCh() {
 			log.Printf("Received new transaction %x from API", tx.From)
 
 			if err := n.mempool.Add(tx); err != nil {
-				log.Println("помилка додавання транзакції в mempool")
+				log.Println("помилка додавання транзакції в mempool: ", err)
 			} else {
 				txBytes, err := json.Marshal(tx)
 				if err != nil {
@@ -94,13 +95,31 @@ func (n *Node) handleTxCh() {
 					continue
 				}
 
+				// TODO: треба зробити адекватоно, а це тільки для тесту
+				pub, priv, err := crypto.Create()
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				binPriv, err := priv.MarshalBinary()
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				binPub, err := pub.MarshalBinary()
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				//////////////////////////////////////////////
+
 				um := UnsignMessage{
 					Type:      MsgNewTransaction,
 					Timestamp: time.Now().UnixMilli(),
 					Data:      txBytes,
-					Pub:       []byte("pub"),
+					Pub:       binPub,
 				}
-				m, err := um.Sign([]byte("priv"))
+				m, err := um.Sign(binPriv)
 				if err != nil {
 					log.Println("sing error: ", err)
 					continue
@@ -120,6 +139,11 @@ func (n *Node) handleMessages() {
 		msg, err := n.topic.sub.Next(n.ctx)
 		if err != nil {
 			log.Println("помилка при отриманні повідомлення: ", err)
+		}
+
+		if msg.ReceivedFrom == n.host.ID() {
+			log.Println("повідомлення від себе")
+			continue
 		}
 
 		var message Message

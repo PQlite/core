@@ -10,12 +10,15 @@ type MessageType string
 
 const (
 	// Транзакції
-	MsgNewTransaction MessageType = "newTransaction"
+	MsgNewTransaction MessageType = "newTransaction" // data - транзакція
 
 	// Блоки
 	MsgNewBlock     MessageType = "newBlock"
 	MsgRequestBlock MessageType = "requestBlock"
-	MsgResponeBlock MessageType = "responeBlock"
+	MsgResponeBlock MessageType = "responeBlock" // data - block
+
+	// Mempool sync
+	MsgMempool MessageType = "mempool"
 
 	// PoS
 	MsgBlockProposal MessageType = "blockProposal"
@@ -41,7 +44,7 @@ type UnsignMessage struct {
 	Pub       []byte      `json:"pub"`  // публічний коюч відправника, для перевірки
 }
 
-func (um *UnsignMessage) Sign(priv []byte) (*Message, error) {
+func (um *UnsignMessage) sign(priv []byte) (*Message, error) {
 	unsignMessageBytes, err := json.Marshal(um)
 	if err != nil {
 		return &Message{}, err
@@ -66,4 +69,18 @@ func (m *Message) getUnsignMessage() *UnsignMessage {
 		Data:      m.Data,
 		Pub:       m.Pub,
 	}
+}
+
+func (m *Message) verify() bool {
+	um := m.getUnsignMessage()
+	binUm, err := json.Marshal(um)
+	if err != nil {
+		return false
+	}
+
+	res, err := crypto.Verify(m.Pub, binUm, m.Signature)
+	if err != nil {
+		return false
+	}
+	return res
 }

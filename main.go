@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,21 +16,20 @@ import (
 )
 
 func main() {
-	// bs, err := database.InitDB()
-	// if err != nil {
-	// 	log.Println("помилка initdb ", err)
-	// 	return
-	// }
-	bs := database.BlockStorage{}
+	bs, err := database.InitDB()
+	if err != nil {
+		log.Println("помилка initdb ", err)
+		return
+	}
 	mempool := chain.Mempool{}
 	ctx := context.Background()
 
-	node, err := p2p.NewNode(ctx, &mempool, &bs)
+	node, err := p2p.NewNode(ctx, &mempool, bs)
 	if err != nil {
 		panic(err)
 	}
 
-	server := api.NewServer(&node, &mempool, &bs)
+	server := api.NewServer(&node, &mempool, bs)
 
 	go server.Start()
 	go node.Start()

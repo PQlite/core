@@ -98,7 +98,5 @@ func (s *Server) handlePostTx(c *fiber.Ctx) error {
 
 // Start запускає HTTP-сервер.
 func (s *Server) Start() {
-	// TODO: вибрати порт для api
 	log.Fatal(s.app.Listen(":8081"))
 }
-

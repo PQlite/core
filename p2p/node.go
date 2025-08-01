@@ -93,11 +93,15 @@ func (n *Node) Start() {
 
 	go peerDiscovery(n.host, n.ctx, n.kdht)
 	go n.handleTxCh()
-	go n.handleMessages()
+	go n.handleBroadcastMessages()
 
 	<-n.ctx.Done()
 	n.host.Close()
 	log.Println("отримано команду зупинки в Node")
+}
+
+func (n *Node) handleMessages() {
+	// TODO: реалізувати це
 }
 
 func (n *Node) handleTxCh() {
@@ -154,7 +158,7 @@ func (n *Node) handleTxCh() {
 }
 
 // Читання вхідних повідомлень
-func (n *Node) handleMessages() {
+func (n *Node) handleBroadcastMessages() {
 	for {
 		msg, err := n.topic.sub.Next(n.ctx)
 		if err != nil {
@@ -170,7 +174,13 @@ func (n *Node) handleMessages() {
 		err = json.Unmarshal(msg.Data, &message)
 		if err != nil {
 			log.Println("помилка розпаковки повідомлення: ", err)
+			continue
 		}
+		if !message.verify() {
+			log.Println("підпис повідомлення not valid")
+			continue
+		}
+
 		switch message.Type {
 		case MsgNewTransaction:
 			var tx chain.Transaction
@@ -183,9 +193,22 @@ func (n *Node) handleMessages() {
 			if err != nil {
 				log.Println("отрмана транзакція не була додана до mempool через", err)
 			}
-		}
-		latency := time.Now().UnixMilli() - message.Timestamp
+		case MsgBlockProposal:
+			var block chain.Block
+			err = json.Unmarshal(message.Data, &block)
+			if err != nil {
+				log.Println("помилка розпаковки blockProposal")
+				continue
+			}
 
+			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
+			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок.). І нагороду, яку він собі назначив
+			if block.Verify() {
+				n.bs.SaveBlock(&block)
+			}
+		}
+
+		latency := time.Now().UnixMilli() - message.Timestamp
 		fmt.Println("Отримано за ", latency, "ms")
 	}
 }
@@ -220,7 +243,8 @@ func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
 }
 
 func connectingToBootstrap(node host.Host, ctx context.Context) {
-	pi, err := peer.AddrInfoFromString("/ip6/2603:c020:8020:57e:39be:e0b6:a47e:c950/tcp/33779/p2p/")
+	// TODO: зробити bootstrap
+	pi, err := peer.AddrInfoFromString()
 	if err != nil {
 		log.Println("помилка отримання адреси bootstrap: ", err)
 	}

@@ -25,6 +25,8 @@ func (m *Mempool) Add(tx *Transaction) error {
 		return errors.New("OOM")
 	}
 
+	// NOTE: ця перевірка майже завжди буде давати true, тому що timestamp різні.
+	// але це все одно захист від дублікатів
 	for _, txFromMem := range m.TXs {
 		if bytes.Equal(txFromMem.Signature, tx.Signature) {
 			return errors.New("tx is already exists")
@@ -44,6 +46,7 @@ func (m *Mempool) Add(tx *Transaction) error {
 	return nil
 }
 
+// NOTE: це взагалі навіщо?
 func (m *Mempool) Len() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()

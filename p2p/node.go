@@ -71,6 +71,10 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		return Node{}, err
 	}
 
+	for _, p := range node.Addrs() {
+		log.Println(p.String(), node.ID().String())
+	}
+
 	return Node{
 		host:    node,
 		ctx:     ctx,
@@ -186,7 +190,6 @@ func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
 	for {
 		select {
 		case <-ticker.C:
-
 			peerChan, err := routingDiscovery.FindPeers(ctx, ns)
 			if err != nil {
 				panic(err)
@@ -218,7 +221,14 @@ func connectingToBootstrap(node host.Host, ctx context.Context) {
 		if err != nil {
 			log.Println("помилка підключення до bootstrap: ", err)
 		} else {
-			log.Println("підключено до ", pi.Addrs)
+			log.Println("підключено до ", pi.ID)
 		}
+	}
+}
+
+func PrintMyAddresses(h host.Host) {
+	for _, addr := range h.Addrs() {
+		fullAddr := fmt.Sprintf("%s/p2p/%s", addr.String(), h.ID().String())
+		fmt.Println("My address:", fullAddr)
 	}
 }

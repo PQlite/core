@@ -173,7 +173,16 @@ func (n *Node) handleMessages() {
 		}
 		switch message.Type {
 		case MsgNewTransaction:
-			log.Println("транзакція")
+			var tx chain.Transaction
+			err = json.Unmarshal(message.Data, &tx)
+			if err != nil {
+				continue
+			}
+
+			err = n.mempool.Add(&tx)
+			if err != nil {
+				log.Println("отрмана транзакція не була додана до mempool через", err)
+			}
 		}
 		latency := time.Now().UnixMilli() - message.Timestamp
 
@@ -211,24 +220,14 @@ func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
 }
 
 func connectingToBootstrap(node host.Host, ctx context.Context) {
-	for _, bootstrap := range dht.DefaultBootstrapPeers {
-		pi, err := peer.AddrInfoFromP2pAddr(bootstrap)
-		if err != nil {
-			log.Println("помилка отримання адреси bootstrap: ", err)
-			continue
-		}
-		err = node.Connect(ctx, *pi)
-		if err != nil {
-			log.Println("помилка підключення до bootstrap: ", err)
-		} else {
-			log.Println("підключено до ", pi.ID)
-		}
+	pi, err := peer.AddrInfoFromString("/ip6/2603:c020:8020:57e:39be:e0b6:a47e:c950/tcp/33779/p2p/")
+	if err != nil {
+		log.Println("помилка отримання адреси bootstrap: ", err)
 	}
-}
-
-func PrintMyAddresses(h host.Host) {
-	for _, addr := range h.Addrs() {
-		fullAddr := fmt.Sprintf("%s/p2p/%s", addr.String(), h.ID().String())
-		fmt.Println("My address:", fullAddr)
+	err = node.Connect(ctx, *pi)
+	if err != nil {
+		log.Println("помилка підключення до bootstrap: ", err)
+	} else {
+		log.Println("підключено до ", pi.ID)
 	}
 }

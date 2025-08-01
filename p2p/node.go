@@ -30,6 +30,10 @@ type Node struct {
 	kdht    *dht.IpfsDHT
 }
 
+const (
+	ns = "PQlite_test"
+)
+
 func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStorage) (Node, error) {
 	var kdht *dht.IpfsDHT
 
@@ -177,13 +181,13 @@ func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
 	ticker := time.NewTicker(120 * time.Second)
 
 	routingDiscovery := discovery_routing.NewRoutingDiscovery(kdht)
-	util.Advertise(ctx, routingDiscovery, "123hello1")
+	util.Advertise(ctx, routingDiscovery, ns)
 
 	for {
 		select {
 		case <-ticker.C:
 
-			peerChan, err := routingDiscovery.FindPeers(ctx, "123hello1")
+			peerChan, err := routingDiscovery.FindPeers(ctx, ns)
 			if err != nil {
 				panic(err)
 			}

@@ -45,11 +45,3 @@ func (m *Mempool) Add(tx *Transaction) error {
 	m.TXs = append(m.TXs, tx)
 	return nil
 }
-
-// NOTE: це взагалі навіщо?
-func (m *Mempool) Len() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return len(m.TXs)
-}

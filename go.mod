@@ -6,7 +6,7 @@ require (
 	github.com/PQlite/crypto v0.0.5-0.20250720122300-266869b5900f
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/gofiber/fiber/v2 v2.52.9
-	github.com/libp2p/go-libp2p v0.42.1
+	github.com/libp2p/go-libp2p v0.42.1-0.20250731184638-f6c14a215b20
 	github.com/libp2p/go-libp2p-kad-dht v0.33.1
 	github.com/libp2p/go-libp2p-pubsub v0.14.2
 	github.com/polydawn/refmt v0.89.0
@@ -35,7 +35,7 @@ require (
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
-	github.com/ipfs/boxo v0.33.1 // indirect
+	github.com/ipfs/boxo v0.33.0 // indirect
 	github.com/ipfs/go-cid v0.5.0 // indirect
 	github.com/ipfs/go-datastore v0.8.2 // indirect
 	github.com/ipfs/go-log/v2 v2.8.0 // indirect

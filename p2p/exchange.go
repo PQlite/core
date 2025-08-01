@@ -34,7 +34,7 @@ func topicInit(ctx context.Context, node host.Host) (Topic, error) {
 	}, nil
 }
 
-func (t Topic) broadcast(message Message, ctx context.Context) error {
+func (t Topic) broadcast(message *Message, ctx context.Context) error {
 	data, err := json.Marshal(message)
 	if err != nil {
 		return err

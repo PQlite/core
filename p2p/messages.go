@@ -1,8 +1,15 @@
 package p2p
 
+import (
+	"encoding/json"
+
+	"github.com/PQlite/crypto"
+)
+
 type MessageType string
 
 const (
+	// NOTE: вони не потрібні, тому що в libp2p вже все є
 	// Мережеві повідомлення
 	MsgPing     MessageType = "ping"
 	MsgPong     MessageType = "pong"
@@ -26,15 +33,43 @@ const (
 )
 
 type Message struct {
-	Text      string `json:"text"`
-	Timestamp int64  `json:"timestamp"`
-}
-
-type Message1 struct {
 	Type      MessageType `json:"type"` // Тип повідомлення
-	From      string      `json:"from"` // ID відправника
-	To        string      `json:"to"`   // ID отримувача, але якщо порожнє - для всіх
 	Timestamp int64       `json:"timestamp"`
 	Data      []byte      `json:"data"`      // дані через json.Marshal
+	Pub       []byte      `json:"pub"`       // публічний коюч відправника, для перевірки
 	Signature []byte      `json:"signature"` // підпис відправника
+}
+
+type UnsignMessage struct {
+	Type      MessageType `json:"type"` // Тип повідомлення
+	Timestamp int64       `json:"timestamp"`
+	Data      []byte      `json:"data"` // дані через json.Marshal
+	Pub       []byte      `json:"pub"`  // публічний коюч відправника, для перевірки
+}
+
+func (um *UnsignMessage) Sign(priv []byte) (*Message, error) {
+	unsignMessageBytes, err := json.Marshal(um)
+	if err != nil {
+		return &Message{}, err
+	}
+	sign, err := crypto.Sign(priv, unsignMessageBytes)
+	if err != nil {
+		return &Message{}, err
+	}
+	return &Message{
+		Type:      um.Type,
+		Timestamp: um.Timestamp,
+		Data:      um.Data,
+		Pub:       um.Pub,
+		Signature: sign,
+	}, nil
+}
+
+func (m *Message) getUnsignMessage() *UnsignMessage {
+	return &UnsignMessage{
+		Type:      m.Type,
+		Timestamp: m.Timestamp,
+		Data:      m.Data,
+		Pub:       m.Pub,
+	}
 }

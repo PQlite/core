@@ -2,6 +2,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/PQlite/core/api"
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/core/database"
@@ -15,9 +21,23 @@ func main() {
 	// 	return
 	// }
 	bs := database.BlockStorage{}
-
 	mempool := chain.Mempool{}
+	ctx := context.Background()
 
-	go api.StartServer(&mempool, &bs)
-	p2p.Node(&mempool, &bs)
+	node, err := p2p.NewNode(ctx, &mempool, &bs)
+	if err != nil {
+		panic(err)
+	}
+
+	server := api.NewServer(&node, &mempool, &bs)
+
+	go server.Start()
+	go node.Start()
+
+	// wait for a SIGINT or SIGTERM signal
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	<-ch
+	ctx.Done()
+	fmt.Println("Received signal, shutting down...")
 }

@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -23,10 +20,18 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 )
 
-func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
-	ctx := context.Background()
+type Node struct {
+	host    host.Host
+	ctx     context.Context
+	TxCh    chan *chain.Transaction
+	topic   *Topic
+	mempool *chain.Mempool
+	bs      *database.BlockStorage
+	kdht    *dht.IpfsDHT
+}
+
+func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStorage) (Node, error) {
 	var kdht *dht.IpfsDHT
-	messageText := "second"
 
 	node, err := libp2p.New(
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
@@ -40,59 +45,96 @@ func Node(mempool *chain.Mempool, bs *database.BlockStorage) {
 		libp2p.ListenAddrStrings("/ip6/::/tcp/0"),
 	)
 	if err != nil {
-		panic(err)
+		return Node{}, err
 	}
-	defer node.Close()
-
-	// Підключення до bootstrap
-	connectingToBootstrap(node, ctx)
-
-	// discovery
-	go peerDiscovery(node, ctx, kdht)
 
 	// init topic
 	topic, err := topicInit(ctx, node)
 	if err != nil {
-		panic(err)
+		return Node{}, err
 	}
-	// TODO: зробити справжню відправку повідомлень
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		for {
-			<-ticker.C
-			message := Message{Text: messageText, Timestamp: time.Now().UnixMilli()}
-			topic.broadcast(message, ctx)
+
+	return Node{
+		host:    node,
+		ctx:     ctx,
+		TxCh:    make(chan *chain.Transaction),
+		topic:   &topic,
+		mempool: mempool,
+		bs:      bs,
+		kdht:    kdht,
+	}, nil
+}
+
+// Запуск p2p сервер
+func (n *Node) Start() {
+	// Підключення до bootstrap
+	connectingToBootstrap(n.host, n.ctx)
+
+	go peerDiscovery(n.host, n.ctx, n.kdht)
+	go n.handleTxCh()
+	go n.handleMessages()
+
+	<-n.ctx.Done()
+	n.host.Close()
+	log.Println("отримано команду зупинки в Node")
+}
+
+func (n *Node) handleTxCh() {
+	for {
+		select {
+		case tx := <-n.TxCh:
+			log.Printf("Received new transaction %x from API", tx.From)
+
+			if err := n.mempool.Add(tx); err != nil {
+				log.Println("помилка додавання транзакції в mempool")
+			} else {
+				txBytes, err := json.Marshal(tx)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+
+				um := UnsignMessage{
+					Type:      MsgNewTransaction,
+					Timestamp: time.Now().UnixMilli(),
+					Data:      txBytes,
+					Pub:       []byte("pub"),
+				}
+				m, err := um.Sign([]byte("priv"))
+				if err != nil {
+					log.Println("sing error: ", err)
+					continue
+				}
+
+				n.topic.broadcast(m, n.ctx)
+			}
+		case <-n.ctx.Done():
+			return
 		}
-	}()
+	}
+}
 
-	// Читання вхідних повідомлень
-	// TODO: Зробити обробку прийнятих даних
-	go func() {
-		for {
-			msg, err := topic.sub.Next(ctx)
-			if err != nil {
-				panic(err)
-			}
-
-			var data Message
-			err = json.Unmarshal(msg.Data, &data)
-			if err != nil {
-				panic(err)
-			}
-			if data.Text == messageText {
-				continue
-			}
-			latency := time.Now().UnixMilli() - data.Timestamp
-
-			fmt.Println("Отримано:", data.Text, " за ", latency, "ms")
+// Читання вхідних повідомлень
+func (n *Node) handleMessages() {
+	for {
+		msg, err := n.topic.sub.Next(n.ctx)
+		if err != nil {
+			log.Println("помилка при отриманні повідомлення: ", err)
 		}
-	}()
 
-	// wait for a SIGINT or SIGTERM signal
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	<-ch
-	fmt.Println("Received signal, shutting down...")
+		var message Message
+		err = json.Unmarshal(msg.Data, &message)
+		if err != nil {
+			log.Println("помилка розпаковки повідомлення: ", err)
+		}
+		switch message.Type {
+		case MsgNewTransaction:
+			log.Println("транзакція")
+		}
+		latency := time.Now().UnixMilli() - message.Timestamp
+
+		fmt.Println("Отримано за ", latency, "ms")
+	}
 }
 
 func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
@@ -115,7 +157,6 @@ func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
 					if p.ID == node.ID() {
 						return
 					} else {
-						log.Println(p.ID)
 						ch := ping.Ping(ctx, node, p.ID)
 						res := <-ch
 						if res.Error == nil {

@@ -143,7 +143,7 @@ func (n *Node) handleTxCh() {
 					Data:      txBytes,
 					Pub:       binPub,
 				}
-				m, err := um.Sign(binPriv)
+				m, err := um.sign(binPriv)
 				if err != nil {
 					log.Println("sing error: ", err)
 					continue
@@ -244,7 +244,7 @@ func peerDiscovery(node host.Host, ctx context.Context, kdht *dht.IpfsDHT) {
 
 func connectingToBootstrap(node host.Host, ctx context.Context) {
 	// TODO: зробити bootstrap
-	pi, err := peer.AddrInfoFromString()
+	pi, err := peer.AddrInfoFromString("")
 	if err != nil {
 		log.Println("помилка отримання адреси bootstrap: ", err)
 	}

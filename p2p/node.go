@@ -41,6 +41,11 @@ const (
 func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStorage) (Node, error) {
 	var kdht *dht.IpfsDHT
 
+	priv, err := LoadOrCreateIdentity(".node.key")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	node, err := libp2p.New(
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			var err error
@@ -51,7 +56,8 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 			return kdht, nil
 		}),
 
-		libp2p.ListenAddrStrings("/ip6/::/tcp/0", "/ip4/0.0.0.0/tcp/0"),
+		libp2p.ListenAddrStrings("/ip6/::/tcp/4003", "/ip4/0.0.0.0/tcp/4003"),
+		libp2p.Identity(priv),
 		// NAT traversal (UPnP, NAT-PMP, AutoNAT)
 		libp2p.NATPortMap(), // Пробує пробросити порт (UPnP/NAT-PMP)
 		// TODO: реалізувати цю функцію
@@ -108,7 +114,7 @@ func (n *Node) Start() {
 	go n.handleTxCh()
 	go n.handleBroadcastMessages()
 
-	// n.syncBlockchain() // NOTE: ще не готове до запуску
+	n.syncBlockchain()
 
 	<-n.ctx.Done()
 	n.host.Close()
@@ -244,6 +250,7 @@ func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, er
 	if err = json.Unmarshal(respBytes, &respMsg); err != nil {
 		return nil, fmt.Errorf("не вдалося розпакувати відповідь: %w", err)
 	}
+	// TODO: додати respMsg.verify
 
 	return &respMsg, nil
 }
@@ -370,25 +377,21 @@ func (n *Node) peerDiscovery() {
 
 func (n *Node) connectingToBootstrap() {
 	// TODO: зробити bootstrap
-	// pi, err := peer.AddrInfoFromString("")
-	for _, addr := range dht.DefaultBootstrapPeers {
-		pi, err := peer.AddrInfoFromP2pAddr(addr)
-		if err != nil {
-			log.Println("помилка отримання адреси bootstrap: ", err)
-		}
-		err = n.host.Connect(n.ctx, *pi)
-		if err != nil {
-			log.Println("помилка підключення до bootstrap: ", err)
-		} else {
-			log.Println("підключено до ", pi.ID)
-		}
+	pi, err := peer.AddrInfoFromString("/ip6/2603:c020:8020:57e:39be:e0b6:a47e:c950/tcp/4003/p2p/12D3KooWRiJbSLm3Tbi4mjERp48fojFyLFyLXfNYFoLmZEhuw5eg")
+	if err != nil {
+		log.Println("помилка отримання адреси bootstrap: ", err)
+	}
+	err = n.host.Connect(n.ctx, *pi)
+	if err != nil {
+		log.Println("помилка підключення до bootstrap: ", err)
+	} else {
+		log.Println("підключено до ", pi.ID)
 	}
 }
 
-// NOTE: тут я використав broadcast, що є дуже не дуже для sync блоків
-// треба зробити механізм очікування на відповідь
 func (n *Node) syncBlockchain() {
 	for {
+		//
 		localBlockHeight, err := n.bs.GetLastBlock()
 		if err != nil {
 			log.Println("помилка бази даних: ", err)
@@ -410,7 +413,46 @@ func (n *Node) syncBlockchain() {
 		if err != nil {
 			panic(err)
 		}
-		n.topic.broadcast(signM, n.ctx)
-		time.Sleep(1 * time.Second)
+		peerForSync := n.choseRandomPeer()
+		if peerForSync == nil {
+			log.Println("не було знайдено peer для синхронізації")
+			return
+		}
+		respMsg, err := n.sendStreamMessage(*peerForSync, signM)
+		if err != nil {
+			panic(err)
+		}
+
+		var respBlock chain.Block
+		if err = json.Unmarshal(respMsg.Data, &respBlock); err != nil {
+			panic(err)
+		}
+
+		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
+		if respBlock.Height < localBlockHeight.Height+1 {
+			log.Println("blockchain is up to date!")
+			return
+		}
+		if respBlock.Height == localBlockHeight.Height+1 {
+			if !respBlock.Verify() {
+				log.Println("отриманий блок, не є валідним")
+				return // ISSUE: треба зробити вібір іншого вузла, або повтору
+			} else {
+				n.bs.SaveBlock(&respBlock)
+			}
+		}
 	}
+}
+
+func (n *Node) choseRandomPeer() *peer.ID {
+	for _, p := range n.host.Peerstore().Peers() {
+		if p == n.host.ID() {
+			continue
+		}
+		if n.host.Network().Connectedness(p) != network.Connected {
+			continue
+		}
+		return &p
+	}
+	return nil
 }

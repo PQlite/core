@@ -73,6 +73,7 @@ func (b *Block) Verify() bool {
 	}
 	blockForVerify.sortTransactions()
 	// FIXME: тут повинна бути ще перевірка кожної транзакції, а не тільки самого блоку
+	// і перевірка hash попередника
 
 	binBlockForVerify, err := json.Marshal(blockForVerify)
 	if err != nil {

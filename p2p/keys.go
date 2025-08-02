@@ -1,11 +1,14 @@
 package p2p
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 
 	"github.com/PQlite/crypto"
+	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 )
 
 type Keys struct {
@@ -77,4 +80,42 @@ func loadKeys() (*Keys, error) {
 		}
 		return &Keys{Priv: binPriv, Pub: binPub}, nil
 	}
+}
+
+func LoadOrCreateIdentity(path string) (libp2pcrypto.PrivKey, error) {
+	// HACK: це написав ChatGPT
+	// Перевіряємо, чи вже існує ключ
+	if _, err := os.Stat(path); err == nil {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		privKey, err := libp2pcrypto.UnmarshalPrivateKey(data)
+		if err != nil {
+			return nil, errors.New("не вдалося розпакувати приватний ключ: " + err.Error())
+		}
+
+		return privKey, nil
+	}
+
+	// Створюємо новий ключ
+	privKey, _, err := libp2pcrypto.GenerateKeyPairWithReader(libp2pcrypto.Ed25519, -1, rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	// Серіалізуємо
+	bytes, err := libp2pcrypto.MarshalPrivateKey(privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Зберігаємо у файл
+	err = os.WriteFile(path, bytes, 0600)
+	if err != nil {
+		return nil, err
+	}
+
+	return privKey, nil
 }

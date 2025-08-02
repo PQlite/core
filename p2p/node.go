@@ -377,7 +377,7 @@ func (n *Node) peerDiscovery() {
 
 func (n *Node) connectingToBootstrap() {
 	// TODO: зробити bootstrap
-	pi, err := peer.AddrInfoFromString("/ip6/2603:c020:8020:57e:39be:e0b6:a47e:c950/tcp/4003/p2p/12D3KooWRiJbSLm3Tbi4mjERp48fojFyLFyLXfNYFoLmZEhuw5eg")
+	pi, err := peer.AddrInfoFromString("/ip6/2603:c020:8020:57e:39be:e0b6:a47e:c950/tcp/4003/p2p/12D3KooWRGYZwViL5uN6qQoadvMSxd7b46ngLbkM2cW2djwemMnc")
 	if err != nil {
 		log.Println("помилка отримання адреси bootstrap: ", err)
 	}

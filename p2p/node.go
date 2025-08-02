@@ -124,7 +124,9 @@ func (n *Node) Start() {
 func (n *Node) handleStreamMessages(stream network.Stream) {
 	log.Printf("Отримано новий прямий потік від %s", stream.Conn().RemotePeer())
 	defer func() {
-		stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
+		log.Println("виникло щось і потік буде закрито")
+		// stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
+		//                         я дізнався що це щось страше
 		stream.Close()
 	}()
 

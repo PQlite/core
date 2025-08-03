@@ -17,26 +17,10 @@ type BlockStorage struct {
 }
 
 func InitDB() (*BlockStorage, error) {
-	dbExists := checkDBExists("/tmp/badger")
 	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
 	bs := &BlockStorage{db: db}
 	if err != nil {
 		return nil, err
-	}
-	if dbExists {
-		return bs, nil
-	} else {
-		// genesis block
-		block := chain.Block{
-			Height:       0,
-			Timestamp:    0,
-			PrevHash:     []byte(""),
-			Hash:         []byte(""),
-			Proposer:     []byte(""),
-			Signature:    []byte(""),
-			Transactions: []*chain.Transaction{},
-		}
-		bs.SaveBlock(&block)
 	}
 	return bs, nil
 }

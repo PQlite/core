@@ -2,9 +2,15 @@
 // including blocks, transactions, and consensus logic.
 package chain
 
+import (
+	"encoding/json"
+
+	"github.com/PQlite/crypto"
+)
+
 type Transaction struct {
-	From      string  `json:"from"`
-	To        string  `json:"to"`
+	From      []byte  `json:"from"`
+	To        []byte  `json:"to"`
 	Amount    float32 `json:"amount"`
 	Timestamp int64   `json:"timestamp"`
 	Nonce     int     `json:"nonce"`
@@ -12,6 +18,7 @@ type Transaction struct {
 	Signature []byte  `json:"signature"`
 }
 
+// NOTE: воно взагалі треба?
 type Wallet struct {
 	Priv string `json:"priv"`
 	Pub  string `json:"pub"`
@@ -26,4 +33,19 @@ func (t Transaction) GetUnsignTransaction() *Transaction {
 		Nonce:     t.Nonce,
 		PubKey:    t.PubKey,
 	}
+}
+
+func (t *Transaction) Sign(priv []byte) error {
+	data, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+
+	sign, err := crypto.Sign(priv, data)
+	if err != nil {
+		return err
+	}
+
+	t.Signature = sign
+	return nil
 }

@@ -83,7 +83,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		return Node{}, err
 	}
 
-	keys, err := loadKeys()
+	keys, err := LoadKeys()
 	if err != nil {
 		log.Println("помилка завантаження ключів")
 		return Node{}, err
@@ -349,7 +349,28 @@ func (n *Node) handleBroadcastMessages() {
 
 				// я це і є настпуний валідатор!
 				if bytes.Equal(val.Address, n.keys.Pub) {
-					println("hello")
+					newBlock := n.createNewBlock()
+
+					newBlockBytes, err := json.Marshal(newBlock)
+					if err != nil {
+						panic(err)
+					}
+
+					blockProposalUnMsg := UnsignMessage{
+						Type:      MsgBlockProposal,
+						Timestamp: time.Now().UnixMilli(),
+						Data:      newBlockBytes,
+						Pub:       n.keys.Pub,
+					}
+
+					blockProposalMsg, err := blockProposalUnMsg.sign(n.keys.Priv)
+					if err != nil {
+						panic(err)
+					}
+
+					n.topic.broadcast(blockProposalMsg, n.ctx)
+
+					n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
 				}
 			}
 		}
@@ -493,4 +514,29 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 	}
 
 	return *nextProposer, nil
+}
+
+func (n *Node) createNewBlock() chain.Block {
+	log.Println("heloo")
+	lastBlock, err := n.bs.GetLastBlock()
+	if err != nil {
+		// NOTE: може не найкращів варіант
+		panic(err)
+	}
+
+	// TODO: очікувати на транзакції, якщо в mempool нічого не має
+
+	ublock := chain.BlockForSign{
+		Height:       lastBlock.Height + 1,
+		Timestamp:    time.Now().UnixMilli(),
+		PrevHash:     lastBlock.Hash,
+		Proposer:     n.keys.Pub,
+		Transactions: n.mempool.TXs,
+	}
+
+	block, err := ublock.Sign(n.keys.Priv)
+	if err != nil {
+		panic(err)
+	}
+	return block
 }

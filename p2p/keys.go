@@ -42,7 +42,7 @@ func save(priv []byte, pub []byte) error {
 	return err
 }
 
-func loadKeys() (*Keys, error) {
+func LoadKeys() (*Keys, error) {
 	_, err := os.Stat(filePath)
 	if err == nil {
 		data, err := os.ReadFile(filePath)

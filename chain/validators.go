@@ -2,6 +2,7 @@ package chain
 
 import (
 	"crypto/sha3"
+	"fmt"
 	"math/big"
 )
 
@@ -10,7 +11,10 @@ type Validator struct {
 	Amount  float32
 }
 
-func SelectNextProposer(prevBlockHash []byte, validators []Validator) *Validator {
+func SelectNextProposer(prevBlockHash []byte, validators []Validator) (*Validator, error) {
+	if len(validators) < 1 {
+		return &Validator{}, fmt.Errorf("кількість вілідаторів меньше 1")
+	}
 	seed := sha3.Sum224(prevBlockHash)
 
 	totalStake := uint64(0)
@@ -28,9 +32,9 @@ func SelectNextProposer(prevBlockHash []byte, validators []Validator) *Validator
 	for i := range validators {
 		cumulative += uint64(validators[i].Amount)
 		if position < cumulative {
-			return &validators[i]
+			return &validators[i], nil
 		}
 	}
 
-	return &validators[len(validators)-1]
+	return &validators[len(validators)-1], nil
 }

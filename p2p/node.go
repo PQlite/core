@@ -24,14 +24,15 @@ import (
 )
 
 type Node struct {
-	host    host.Host
-	ctx     context.Context
-	TxCh    chan *chain.Transaction
-	topic   *Topic
-	mempool *chain.Mempool
-	bs      *database.BlockStorage
-	kdht    *dht.IpfsDHT
-	keys    *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
+	host         host.Host
+	ctx          context.Context
+	TxCh         chan *chain.Transaction
+	topic        *Topic
+	mempool      *chain.Mempool
+	bs           *database.BlockStorage
+	kdht         *dht.IpfsDHT
+	keys         *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
+	nextProposer chain.Validator
 }
 
 const (
@@ -443,6 +444,12 @@ func (n *Node) syncBlockchain() {
 		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
 		if respBlock.Height < localBlockHeight.Height+1 {
 			log.Println("blockchain is up to date!")
+			nextProposer, err := n.chooseValidator()
+			if err != nil {
+				log.Println("помилка вибору наступного валідатора:", err)
+				return
+			}
+			n.nextProposer = nextProposer
 			return
 		}
 		if respBlock.Height == localBlockHeight.Height+1 {
@@ -480,5 +487,10 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 		return chain.Validator{}, fmt.Errorf("Помилка отримання списку валідаторів: %w", err)
 	}
 
-	return *chain.SelectNextProposer(lastBlock.Hash, *validators), nil
+	nextProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators)
+	if err != nil {
+		return chain.Validator{}, err
+	}
+
+	return *nextProposer, nil
 }

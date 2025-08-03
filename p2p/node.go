@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -346,7 +347,8 @@ func (n *Node) handleBroadcastMessages() {
 				}
 
 				// я це і є настпуний валідатор!
-				if val.Address == n.keys.Pub {
+				if bytes.Equal(val.Address, n.keys.Pub) {
+					println("hello")
 				}
 			}
 		}

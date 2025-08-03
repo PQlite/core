@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 
 	"github.com/PQlite/core/chain"
+	"github.com/dgraph-io/badger/v4"
 )
 
 func (bs *BlockStorage) AddValidator(validator *chain.Validator) error {
@@ -20,6 +21,36 @@ func (bs *BlockStorage) AddValidator(validator *chain.Validator) error {
 		return err
 	}
 	return txn.Commit()
+}
+
+func (bs *BlockStorage) GetValidatorsList() (*[]chain.Validator, error) {
+	var res []chain.Validator
+
+	err := bs.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		opts.Prefix = []byte("v_")
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			key := item.Key()
+
+			err := item.Value(func(v []byte) error {
+				address := getValidatorAddress(key)
+				amount := bytesToFloat32(v)
+				res = append(res, chain.Validator{Address: address, Amount: amount})
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return &res, err
 }
 
 func float32ToBytes(f float32) []byte {
@@ -37,4 +68,8 @@ func bytesToFloat32(b []byte) float32 {
 // додає v_ до адреси
 func getValidatorKey(a []byte) []byte {
 	return append([]byte("v_"), a...)
+}
+
+func getValidatorAddress(a []byte) []byte {
+	return a[len([]byte("v_")):]
 }

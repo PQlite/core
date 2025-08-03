@@ -124,7 +124,6 @@ func (n *Node) Start() {
 func (n *Node) handleStreamMessages(stream network.Stream) {
 	log.Printf("Отримано новий прямий потік від %s", stream.Conn().RemotePeer())
 	defer func() {
-		log.Println("виникло щось і потік буде закрито")
 		// stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
 		//                         я дізнався що це щось страше
 		stream.Close()
@@ -340,11 +339,20 @@ func (n *Node) handleBroadcastMessages() {
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок.). І нагороду, яку він собі назначив
 			if block.Verify() {
 				n.bs.SaveBlock(&block)
+				val, err := n.chooseValidator()
+				if err != nil {
+					log.Println("помилка вибору наступного валідатора, ", err)
+					continue
+				}
+
+				// я це і є настпуний валідатор!
+				if val.Address == n.keys.Pub {
+				}
 			}
 		}
 
 		latency := time.Now().UnixMilli() - message.Timestamp
-		fmt.Println("Отримано за ", latency, "ms")
+		log.Println("oтримано за ", latency, "ms")
 	}
 }
 
@@ -415,7 +423,7 @@ func (n *Node) syncBlockchain() {
 		if err != nil {
 			panic(err)
 		}
-		peerForSync := n.choseRandomPeer()
+		peerForSync := n.chooseRandomPeer()
 		if peerForSync == nil {
 			log.Println("не було знайдено peer для синхронізації")
 			return
@@ -438,15 +446,16 @@ func (n *Node) syncBlockchain() {
 		if respBlock.Height == localBlockHeight.Height+1 {
 			if !respBlock.Verify() {
 				log.Println("отриманий блок, не є валідним")
-				return // ISSUE: треба зробити вібір іншого вузла, або повтору
+				return // ISSUE: треба зробити вібір іншого вузла, або повтор
 			} else {
+				log.Println("отримано блок:", respBlock.Height)
 				n.bs.SaveBlock(&respBlock)
 			}
 		}
 	}
 }
 
-func (n *Node) choseRandomPeer() *peer.ID {
+func (n *Node) chooseRandomPeer() *peer.ID {
 	for _, p := range n.host.Peerstore().Peers() {
 		if p == n.host.ID() {
 			continue
@@ -457,4 +466,17 @@ func (n *Node) choseRandomPeer() *peer.ID {
 		return &p
 	}
 	return nil
+}
+
+func (n *Node) chooseValidator() (chain.Validator, error) {
+	lastBlock, err := n.bs.GetLastBlock()
+	if err != nil {
+		return chain.Validator{}, fmt.Errorf("Помилка отримання останнього блоку: %w", err)
+	}
+	validators, err := n.bs.GetValidatorsList()
+	if err != nil {
+		return chain.Validator{}, fmt.Errorf("Помилка отримання списку валідаторів: %w", err)
+	}
+
+	return *chain.SelectNextProposer(lastBlock.Hash, *validators), nil
 }

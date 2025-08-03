@@ -32,14 +32,16 @@ func main() {
 	}
 
 	// genesis block
-	block := chain.Block{
-		Height:       0,
+	unblock := chain.BlockForSign{
+		Height:       1,
 		Timestamp:    0,
 		PrevHash:     []byte(""),
-		Hash:         []byte(""),
-		Proposer:     []byte(""),
-		Signature:    []byte(""),
+		Proposer:     keys.Pub,
 		Transactions: []*chain.Transaction{&genesisTx},
+	}
+	block, err := unblock.Sign(keys.Priv)
+	if err != nil {
+		panic(err)
 	}
 	bs.SaveBlock(&block)
 

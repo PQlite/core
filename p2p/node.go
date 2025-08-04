@@ -336,6 +336,7 @@ func (n *Node) handleBroadcastMessages() {
 				log.Println("помилка розпаковки blockProposal")
 				continue
 			}
+			log.Printf("отримано новий блок: %w", block.Height)
 
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
@@ -476,6 +477,30 @@ func (n *Node) syncBlockchain() {
 				return
 			}
 			n.nextProposer = nextProposer
+
+			if true {
+				block := n.createNewBlock()
+
+				data, err := json.Marshal(block)
+				if err != nil {
+					panic(err)
+				}
+
+				msg := UnsignMessage{
+					Type:      MsgBlockProposal,
+					Timestamp: time.Now().UnixMilli(),
+					Data:      data,
+					Pub:       n.keys.Pub,
+				}
+				signMsg, err := msg.sign(n.keys.Priv)
+				if err != nil {
+					panic(err)
+				}
+
+				println(1)
+				n.topic.broadcast(signMsg, n.ctx)
+
+			}
 			return
 		}
 		if respBlock.Height == localBlockHeight.Height+1 {
@@ -555,6 +580,8 @@ func (n *Node) createNewBlock() chain.Block {
 	if err != nil {
 		panic(err)
 	}
-	// TODO: очистити mempool
+
+	n.mempool.TXs = nil // очищення TXs
+
 	return block
 }

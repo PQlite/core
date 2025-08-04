@@ -429,11 +429,11 @@ func (n *Node) syncBlockchain() {
 		//
 		localBlockHeight, err := n.bs.GetLastBlock()
 		if err != nil {
-			localBlockHeight = &chain.Block{Height: 0}
+			localBlockHeight = &chain.Block{Height: 1}
 		}
 
 		if localBlockHeight == nil {
-			localBlockHeight = &chain.Block{Height: 0}
+			localBlockHeight = &chain.Block{Height: 1}
 		}
 
 		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
@@ -539,7 +539,9 @@ func (n *Node) createNewBlock() chain.Block {
 		panic(err)
 	}
 
-	// TODO: очікувати на транзакції, якщо в mempool нічого не має
+	for len(n.mempool.TXs) < 1 {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	ublock := chain.BlockForSign{
 		Height:       lastBlock.Height + 1,

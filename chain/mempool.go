@@ -4,12 +4,9 @@ package chain
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
-	"log"
+	"fmt"
 	"sync"
-
-	"github.com/PQlite/crypto"
 )
 
 type Mempool struct {
@@ -33,15 +30,13 @@ func (m *Mempool) Add(tx *Transaction) error {
 		}
 	}
 
-	txForVerify, err := json.Marshal(tx.GetUnsignTransaction())
+	isValid, err := tx.Verify()
 	if err != nil {
-		log.Printf("Помилка під час серіалізації транзакції для перевірки: %v", err)
+		return err
 	}
-
-	isValid, err := crypto.Verify(tx.PubKey, txForVerify, tx.Signature)
-	if !isValid || err != nil {
-		return errors.New("signature is not valid")
+	if isValid {
+		m.TXs = append(m.TXs, tx)
+		return nil
 	}
-	m.TXs = append(m.TXs, tx)
-	return nil
+	return fmt.Errorf("signature is not valid")
 }

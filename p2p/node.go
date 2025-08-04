@@ -338,7 +338,8 @@ func (n *Node) handleBroadcastMessages() {
 			}
 
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
-			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок.). І нагороду, яку він собі назначив
+			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
+			// TODO: видалити транзакції з mempool, якщо вони вже є в блоці
 			if block.Verify() {
 				n.bs.SaveBlock(&block)
 				val, err := n.chooseValidator()
@@ -428,7 +429,11 @@ func (n *Node) syncBlockchain() {
 		//
 		localBlockHeight, err := n.bs.GetLastBlock()
 		if err != nil {
-			log.Println("помилка бази даних: ", err)
+			localBlockHeight = &chain.Block{Height: 0}
+		}
+
+		if localBlockHeight == nil {
+			localBlockHeight = &chain.Block{Height: 0}
 		}
 
 		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
@@ -479,6 +484,17 @@ func (n *Node) syncBlockchain() {
 				return // ISSUE: треба зробити вібір іншого вузла, або повтор
 			} else {
 				log.Println("отримано блок:", respBlock.Height)
+
+				for _, tx := range respBlock.Transactions {
+					if bytes.Equal(tx.To, []byte("stake")) {
+						validator := chain.Validator{
+							Address: tx.PubKey,
+							Amount:  tx.Amount,
+						}
+						n.bs.AddValidator(&validator)
+					}
+				}
+
 				n.bs.SaveBlock(&respBlock)
 			}
 		}
@@ -517,7 +533,6 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 }
 
 func (n *Node) createNewBlock() chain.Block {
-	log.Println("heloo")
 	lastBlock, err := n.bs.GetLastBlock()
 	if err != nil {
 		// NOTE: може не найкращів варіант
@@ -538,5 +553,6 @@ func (n *Node) createNewBlock() chain.Block {
 	if err != nil {
 		panic(err)
 	}
+	// TODO: очистити mempool
 	return block
 }

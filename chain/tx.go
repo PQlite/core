@@ -4,6 +4,7 @@ package chain
 
 import (
 	"encoding/json"
+	"log"
 
 	"github.com/PQlite/crypto"
 )
@@ -49,3 +50,27 @@ func (t *Transaction) Sign(priv []byte) error {
 	t.Signature = sign
 	return nil
 }
+
+func (t *Transaction) Verify() (bool, error) {
+	unTx := t.GetUnsignTransaction()
+	data, err := json.Marshal(unTx)
+	if err != nil {
+		log.Printf("Помилка під час серіалізації транзакції для перевірки: %v", err)
+		return false, err
+	}
+
+	return crypto.Verify(t.PubKey, data, t.Signature)
+}
+
+// func VerifyAndAddValidators(t []*Transaction) error {
+// 	for _, tx := range t {
+// 		isValid, err := tx.Verify()
+// 		if err != nil || !isValid {
+// 			return fmt.Errorf("not valid")
+// 		}
+//
+// 		if bytes.Equal(tx.To, []byte("stake")) {
+//
+// 		}
+// 	}
+// }

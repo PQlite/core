@@ -38,7 +38,6 @@ func (b *BlockForSign) sortTransactions() {
 }
 
 func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
-	b.Height++ // NOTE: Я точно не знаю, але треба додавати +1, щоб висота була на одну більше ніж попередній
 	b.sortTransactions()
 
 	BlockForSignBytes, err := json.Marshal(*b)

@@ -1,3 +1,4 @@
+// Package p2p provides peer-to-peer networking functionality.
 package p2p
 
 import (
@@ -165,14 +166,14 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 				panic(err)
 			}
 
-			respUmsg := UnsignMessage{
+			respMsg := Message{
 				Type:      MsgResponeBlock,
 				Timestamp: time.Now().UnixMilli(),
 				Data:      respBlockBytes,
 				Pub:       n.keys.Pub,
 			}
 
-			respMsg, err := respUmsg.sign(n.keys.Priv)
+			err = respMsg.sign(n.keys.Priv)
 			if err != nil {
 				panic(err)
 			}
@@ -197,13 +198,14 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 				panic(err)
 			}
 
-			respUmsg := UnsignMessage{
+			respMsg := Message{
 				Type:      MsgResponeBlock,
 				Timestamp: time.Now().UnixMilli(),
 				Data:      reqBlockBytes,
 				Pub:       n.keys.Pub,
 			}
-			respMsg, err := respUmsg.sign(n.keys.Priv)
+
+			err = respMsg.sign(n.keys.Priv)
 			if err != nil {
 				panic(err)
 			}
@@ -273,19 +275,19 @@ func (n *Node) handleTxCh() {
 					continue
 				}
 
-				um := UnsignMessage{
+				m := Message{
 					Type:      MsgNewTransaction,
 					Timestamp: time.Now().UnixMilli(),
 					Data:      txBytes,
 					Pub:       n.keys.Pub,
 				}
-				m, err := um.sign(n.keys.Priv)
+				err = m.sign(n.keys.Priv)
 				if err != nil {
 					log.Println("sing error: ", err)
 					continue
 				}
 
-				n.topic.broadcast(m, n.ctx)
+				n.topic.broadcast(&m, n.ctx)
 			}
 		case <-n.ctx.Done():
 			return
@@ -336,7 +338,7 @@ func (n *Node) handleBroadcastMessages() {
 				log.Println("помилка розпаковки blockProposal")
 				continue
 			}
-			log.Printf("отримано новий блок: %w", block.Height)
+			log.Printf("отримано новий блок: %d", block.Height)
 
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
@@ -358,19 +360,19 @@ func (n *Node) handleBroadcastMessages() {
 						panic(err)
 					}
 
-					blockProposalUnMsg := UnsignMessage{
+					blockProposalMsg := Message{
 						Type:      MsgBlockProposal,
 						Timestamp: time.Now().UnixMilli(),
 						Data:      newBlockBytes,
 						Pub:       n.keys.Pub,
 					}
 
-					blockProposalMsg, err := blockProposalUnMsg.sign(n.keys.Priv)
+					err = blockProposalMsg.sign(n.keys.Priv)
 					if err != nil {
 						panic(err)
 					}
 
-					n.topic.broadcast(blockProposalMsg, n.ctx)
+					n.topic.broadcast(&blockProposalMsg, n.ctx)
 
 					n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
 				}
@@ -423,121 +425,6 @@ func (n *Node) connectingToBootstrap() {
 	} else {
 		log.Println("підключено до ", pi.ID)
 	}
-}
-
-func (n *Node) syncBlockchain() {
-	for {
-		//
-		localBlockHeight, err := n.bs.GetLastBlock()
-		if err != nil {
-			localBlockHeight = &chain.Block{Height: 0}
-		}
-
-		if localBlockHeight == nil {
-			localBlockHeight = &chain.Block{Height: 0}
-		}
-
-		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
-		if err != nil {
-			panic(err)
-		}
-
-		m := Message{
-			Type:      MsgRequestBlock,
-			Timestamp: time.Now().UnixMilli(),
-			Data:      data,
-			Pub:       n.keys.Pub,
-		}
-		um := m.getUnsignMessage()
-		signM, err := um.sign(n.keys.Priv)
-		if err != nil {
-			panic(err)
-		}
-		peerForSync := n.chooseRandomPeer()
-		if peerForSync == nil {
-			log.Println("не було знайдено peer для синхронізації")
-			return
-		}
-		respMsg, err := n.sendStreamMessage(*peerForSync, signM)
-		if err != nil {
-			panic(err)
-		}
-
-		var respBlock chain.Block
-		if err = json.Unmarshal(respMsg.Data, &respBlock); err != nil {
-			panic(err)
-		}
-
-		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
-		if respBlock.Height < localBlockHeight.Height+1 {
-			log.Println("blockchain is up to date!")
-			nextProposer, err := n.chooseValidator()
-			if err != nil {
-				log.Println("помилка вибору наступного валідатора:", err)
-				return
-			}
-			n.nextProposer = nextProposer
-
-			if true {
-				block := n.createNewBlock()
-
-				data, err := json.Marshal(block)
-				if err != nil {
-					panic(err)
-				}
-
-				msg := UnsignMessage{
-					Type:      MsgBlockProposal,
-					Timestamp: time.Now().UnixMilli(),
-					Data:      data,
-					Pub:       n.keys.Pub,
-				}
-				signMsg, err := msg.sign(n.keys.Priv)
-				if err != nil {
-					panic(err)
-				}
-
-				println(1)
-				n.topic.broadcast(signMsg, n.ctx)
-
-			}
-			return
-		}
-		if respBlock.Height == localBlockHeight.Height+1 {
-			if !respBlock.Verify() {
-				log.Println("отриманий блок, не є валідним")
-				return // ISSUE: треба зробити вібір іншого вузла, або повтор
-			} else {
-				log.Println("отримано блок:", respBlock.Height)
-
-				for _, tx := range respBlock.Transactions {
-					if bytes.Equal(tx.To, []byte("stake")) {
-						validator := chain.Validator{
-							Address: tx.PubKey,
-							Amount:  tx.Amount,
-						}
-						n.bs.AddValidator(&validator)
-						log.Println("додано валідатора:", validator.Amount)
-					}
-				}
-
-				n.bs.SaveBlock(&respBlock)
-			}
-		}
-	}
-}
-
-func (n *Node) chooseRandomPeer() *peer.ID {
-	for _, p := range n.host.Peerstore().Peers() {
-		if p == n.host.ID() {
-			continue
-		}
-		if n.host.Network().Connectedness(p) != network.Connected {
-			continue
-		}
-		return &p
-	}
-	return nil
 }
 
 func (n *Node) chooseValidator() (chain.Validator, error) {

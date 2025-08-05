@@ -37,33 +37,23 @@ type Message struct {
 	Signature []byte      `json:"signature"` // підпис відправника
 }
 
-type UnsignMessage struct {
-	Type      MessageType `json:"type"` // Тип повідомлення
-	Timestamp int64       `json:"timestamp"`
-	Data      []byte      `json:"data"` // дані через json.Marshal
-	Pub       []byte      `json:"pub"`  // публічний коюч відправника, для перевірки
-}
-
-func (um *UnsignMessage) sign(priv []byte) (*Message, error) {
-	unsignMessageBytes, err := json.Marshal(um)
+func (m *Message) sign(priv []byte) error {
+	unsignMessageBytes, err := json.Marshal(m)
 	if err != nil {
-		return &Message{}, err
+		return err
 	}
 	sign, err := crypto.Sign(priv, unsignMessageBytes)
 	if err != nil {
-		return &Message{}, err
+		return err
 	}
-	return &Message{
-		Type:      um.Type,
-		Timestamp: um.Timestamp,
-		Data:      um.Data,
-		Pub:       um.Pub,
-		Signature: sign,
-	}, nil
+
+	m.Signature = sign
+
+	return nil
 }
 
-func (m *Message) getUnsignMessage() *UnsignMessage {
-	return &UnsignMessage{
+func (m *Message) getUnsignMessage() *Message {
+	return &Message{
 		Type:      m.Type,
 		Timestamp: m.Timestamp,
 		Data:      m.Data,

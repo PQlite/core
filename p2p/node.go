@@ -17,7 +17,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/core/routing"
 	discovery_routing "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
@@ -35,11 +34,6 @@ type Node struct {
 	keys         *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
 	nextProposer chain.Validator
 }
-
-const (
-	ns                         = "PQlite_test"
-	directProtocol protocol.ID = "/pqlite/direct/1.0.0"
-)
 
 func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStorage) (Node, error) {
 	var kdht *dht.IpfsDHT
@@ -425,51 +419,4 @@ func (n *Node) connectingToBootstrap() {
 	} else {
 		log.Println("підключено до ", pi.ID)
 	}
-}
-
-func (n *Node) chooseValidator() (chain.Validator, error) {
-	lastBlock, err := n.bs.GetLastBlock()
-	if err != nil {
-		return chain.Validator{}, fmt.Errorf("помилка отримання останнього блоку: %w", err)
-	}
-	validators, err := n.bs.GetValidatorsList()
-	if err != nil {
-		return chain.Validator{}, fmt.Errorf("помилка отримання списку валідаторів: %w", err)
-	}
-
-	nextProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators)
-	if err != nil {
-		return chain.Validator{}, err
-	}
-
-	return *nextProposer, nil
-}
-
-func (n *Node) createNewBlock() chain.Block {
-	lastBlock, err := n.bs.GetLastBlock()
-	if err != nil {
-		// NOTE: може не найкращів варіант
-		panic(err)
-	}
-
-	for len(n.mempool.TXs) < 1 {
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	ublock := chain.BlockForSign{
-		Height:       lastBlock.Height + 1,
-		Timestamp:    time.Now().UnixMilli(),
-		PrevHash:     lastBlock.Hash,
-		Proposer:     n.keys.Pub,
-		Transactions: n.mempool.TXs,
-	}
-
-	block, err := ublock.Sign(n.keys.Priv)
-	if err != nil {
-		panic(err)
-	}
-
-	n.mempool.TXs = nil // очищення TXs
-
-	return block
 }

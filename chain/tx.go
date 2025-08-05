@@ -20,8 +20,7 @@ type Transaction struct {
 	Signature []byte  `json:"signature"`
 }
 
-// NOTE: воно взагалі треба?
-type Wallet struct {
+type Wallet struct { // NOTE: воно взагалі треба?
 	Priv string `json:"priv"`
 	Pub  string `json:"pub"`
 }

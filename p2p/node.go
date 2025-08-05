@@ -543,11 +543,11 @@ func (n *Node) chooseRandomPeer() *peer.ID {
 func (n *Node) chooseValidator() (chain.Validator, error) {
 	lastBlock, err := n.bs.GetLastBlock()
 	if err != nil {
-		return chain.Validator{}, fmt.Errorf("Помилка отримання останнього блоку: %w", err)
+		return chain.Validator{}, fmt.Errorf("помилка отримання останнього блоку: %w", err)
 	}
 	validators, err := n.bs.GetValidatorsList()
 	if err != nil {
-		return chain.Validator{}, fmt.Errorf("Помилка отримання списку валідаторів: %w", err)
+		return chain.Validator{}, fmt.Errorf("помилка отримання списку валідаторів: %w", err)
 	}
 
 	nextProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators)

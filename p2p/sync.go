@@ -64,7 +64,7 @@ func (n *Node) syncBlockchain() {
 			}
 			n.nextProposer = nextProposer
 
-			if true {
+			if bytes.Equal(nextProposer.Address, n.keys.Pub) {
 				block := n.createNewBlock()
 
 				data, err := json.Marshal(block)
@@ -83,7 +83,6 @@ func (n *Node) syncBlockchain() {
 					panic(err)
 				}
 
-				println(1)
 				n.topic.broadcast(&msg, n.ctx)
 
 			}
@@ -97,7 +96,7 @@ func (n *Node) syncBlockchain() {
 				log.Printf("блок %d отримано за %d ms", respBlock.Height, time.Now().UnixMilli()-respMsg.Timestamp)
 
 				for _, tx := range respBlock.Transactions {
-					if bytes.Equal(tx.To, []byte("stake")) {
+					if bytes.Equal(tx.To, []byte(STAKE)) {
 						validator := chain.Validator{
 							Address: tx.PubKey,
 							Amount:  tx.Amount,

@@ -5,7 +5,6 @@ package chain
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"sync"
 )
 
@@ -30,13 +29,12 @@ func (m *Mempool) Add(tx *Transaction) error {
 		}
 	}
 
-	isValid, err := tx.Verify()
+	err := tx.Verify()
 	if err != nil {
 		return err
 	}
-	if isValid {
-		m.TXs = append(m.TXs, tx)
-		return nil
-	}
-	return fmt.Errorf("signature is not valid")
+
+	m.TXs = append(m.TXs, tx)
+
+	return nil
 }

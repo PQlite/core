@@ -62,7 +62,7 @@ func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
 	}, nil
 }
 
-func (b *Block) Verify() bool {
+func (b *Block) Verify() bool { // NOTE: чому воно повертає bool а не error?
 	blockForVerify := BlockForSign{
 		Height:       b.Height,
 		Timestamp:    b.Timestamp,
@@ -73,8 +73,8 @@ func (b *Block) Verify() bool {
 	blockForVerify.sortTransactions()
 
 	for _, tx := range blockForVerify.Transactions {
-		isValid, err := tx.Verify()
-		if err != nil || !isValid {
+		err := tx.Verify()
+		if err != nil {
 			return false
 		}
 	}

@@ -53,7 +53,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 			return kdht, nil
 		}),
 
-		libp2p.ListenAddrStrings("/ip6/::/quic/4003", "/ip4/0.0.0.0/quic/4003"),
+		libp2p.ListenAddrStrings("/ip6/::/udp/4003/quic-v1", "/ip4/0.0.0.0/udp/4003/quic-v1"),
 		libp2p.Identity(priv),
 		// NAT traversal (UPnP, NAT-PMP, AutoNAT)
 		libp2p.NATPortMap(), // Пробує пробросити порт (UPnP/NAT-PMP)

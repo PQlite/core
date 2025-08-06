@@ -119,7 +119,7 @@ func (n *Node) Start() {
 }
 
 func (n *Node) handleStreamMessages(stream network.Stream) {
-	log.Printf("Отримано новий прямий потік від %s", stream.Conn().RemotePeer())
+	log.Printf("Отримано новий прямий потік від %s", stream.Conn().RemoteMultiaddr())
 	defer func() {
 		// stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
 		//                         я дізнався що це щось страше
@@ -408,15 +408,16 @@ func (n *Node) peerDiscovery() {
 }
 
 func (n *Node) connectingToBootstrap() {
-	// TODO: зробити bootstrap
-	pi, err := peer.AddrInfoFromString("/ip6/2603:c020:8020:57e:39be:e0b6:a47e:c950/tcp/4003/p2p/12D3KooWRGYZwViL5uN6qQoadvMSxd7b46ngLbkM2cW2djwemMnc")
-	if err != nil {
-		log.Println("помилка отримання адреси bootstrap: ", err)
-	}
-	err = n.host.Connect(n.ctx, *pi)
-	if err != nil {
-		log.Println("помилка підключення до bootstrap: ", err)
-	} else {
-		log.Println("підключено до ", pi.ID)
+	for _, addr := range BOOTSTRAPLIST {
+		pi, err := peer.AddrInfoFromString(addr)
+		if err != nil {
+			log.Println("помилка отримання адреси bootstrap: ", err)
+		}
+		err = n.host.Connect(n.ctx, *pi)
+		if err != nil {
+			log.Println("помилка підключення до bootstrap: ", err)
+		} else {
+			log.Println("підключено до ", pi.Addrs)
+		}
 	}
 }

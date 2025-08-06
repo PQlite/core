@@ -58,7 +58,7 @@ func (n *Node) createNewBlock() chain.Block {
 
 func (n *Node) addRewardTx(b *chain.Block) {
 	tx := chain.Transaction{
-		From:      []byte(REWARD_WALLET),
+		From:      []byte(REWARDWALLET),
 		To:        b.Proposer,
 		Amount:    REWARD,
 		Timestamp: time.Now().UnixMilli(),

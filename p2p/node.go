@@ -386,6 +386,8 @@ func (n *Node) handleBroadcastMessages() {
 					n.topic.broadcast(&blockProposalMsg, n.ctx)
 
 					n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
+
+					continue
 				}
 			}
 			log.Println("блок не є валідним")

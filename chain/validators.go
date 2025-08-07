@@ -12,6 +12,7 @@ type Validator struct {
 }
 
 func SelectNextProposer(prevBlockHash []byte, validators []Validator) (*Validator, error) {
+	// FIXME: не може працювати з числами float
 	if len(validators) < 1 {
 		return &Validator{}, fmt.Errorf("кількість вілідаторів меньше 1")
 	}

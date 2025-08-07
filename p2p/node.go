@@ -297,17 +297,18 @@ func (n *Node) handleBroadcastMessages() {
 			log.Println("помилка при отриманні повідомлення: ", err)
 		}
 
-		if msg.ReceivedFrom == n.host.ID() {
-			log.Println("повідомлення від себе")
-			continue
-		}
-
 		var message Message
 		err = json.Unmarshal(msg.Data, &message)
 		if err != nil {
 			log.Println("помилка розпаковки повідомлення: ", err)
 			continue
 		}
+
+		if msg.ReceivedFrom == n.host.ID() && message.Type != MsgBlockProposal { // HACK: якщо цього не буде, то воно не зможе запустити створення ще оного блоку
+			log.Println("повідомлення від себе")
+			continue
+		}
+
 		if !message.verify() {
 			log.Println("підпис повідомлення not valid")
 			continue

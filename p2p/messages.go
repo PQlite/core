@@ -26,7 +26,8 @@ const (
 	MsgCommit        MessageType = "commit"
 
 	// Валідатори
-	MsgValidatorSet MessageType = "validatorSet"
+	MsgValidatorSet    MessageType = "validatorSet"
+	MsgDeleteValidator MessageType = "deleteValidator" // NOTE: це треба, щоб видаляти валідатора зі списку, якщо він не зробив блок/вимкнувся
 )
 
 type Message struct {

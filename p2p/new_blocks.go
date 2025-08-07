@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -32,6 +33,7 @@ func (n *Node) createNewBlock() chain.Block {
 		panic(err)
 	}
 
+	log.Println("очікування транзакцій для нового блоку")
 	for len(n.mempool.TXs) < 1 {
 		time.Sleep(100 * time.Millisecond)
 	}

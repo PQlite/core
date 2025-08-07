@@ -12,6 +12,7 @@ import (
 )
 
 func (n *Node) syncBlockchain() {
+ // OPTIMIZE: зробити отримання нових блоків в btach
 	for {
 		//
 		localBlockHeight, err := n.bs.GetLastBlock()

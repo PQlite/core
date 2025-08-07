@@ -44,19 +44,19 @@ func (n *Node) createNewBlock() chain.Block {
 		Transactions: n.mempool.TXs,
 	}
 
+	n.addRewardTx(&ublock)
+
 	block, err := ublock.Sign(n.keys.Priv)
 	if err != nil {
 		panic(err)
 	}
-
-	n.addRewardTx(&block)
 
 	n.mempool.TXs = nil // очищення TXs
 
 	return block
 }
 
-func (n *Node) addRewardTx(b *chain.Block) {
+func (n *Node) addRewardTx(b *chain.BlockForSign) {
 	tx := chain.Transaction{
 		From:      []byte(REWARDWALLET),
 		To:        b.Proposer,

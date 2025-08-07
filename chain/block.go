@@ -76,13 +76,16 @@ func (b *Block) Verify() bool { // XXX: чому воно повертає bool 
 
 	binBlockForVerify, err := json.Marshal(blockForVerify)
 	if err != nil {
+		log.Println("помилка json.Marshal в verify: ", err)
 		return false
 	}
 
 	res, err := crypto.Verify(b.Proposer, binBlockForVerify, b.Signature)
 	if err != nil {
+		log.Println("помилка перевірки підпису блоку: ", err)
 		return false
 	}
+	log.Println("подпис блоку є ", res)
 	return res
 }
 

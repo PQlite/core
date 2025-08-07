@@ -12,7 +12,7 @@ import (
 )
 
 func (n *Node) syncBlockchain() {
- // OPTIMIZE: зробити отримання нових блоків в btach
+	// OPTIMIZE: зробити отримання нових блоків в btach
 	for {
 		//
 		localBlockHeight, err := n.bs.GetLastBlock()
@@ -90,7 +90,7 @@ func (n *Node) syncBlockchain() {
 			return
 		}
 		if respBlock.Height == localBlockHeight.Height+1 {
-			if !respBlock.Verify() {
+			if !respBlock.Verify() { // FIXME: додати перевірку транзакцій respBlock.VerifyTransactions()
 				log.Println("отриманий блок, не є валідним")
 				return // ISSUE: треба зробити вібір іншого вузла, або повтор
 			} else {

@@ -62,7 +62,7 @@ func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
 	}, nil
 }
 
-func (b *Block) Verify() bool { // NOTE: чому воно повертає bool а не error?
+func (b *Block) Verify() bool { // XXX: чому воно повертає bool а не error?
 	blockForVerify := BlockForSign{
 		Height:       b.Height,
 		Timestamp:    b.Timestamp,
@@ -72,14 +72,6 @@ func (b *Block) Verify() bool { // NOTE: чому воно повертає bool
 	}
 
 	blockForVerify.sortTransactions()
-
-	// NOTE: це забагато роботи для однієї функції
-	for _, tx := range blockForVerify.Transactions {
-		err := tx.Verify()
-		if err != nil {
-			return false
-		}
-	}
 
 	binBlockForVerify, err := json.Marshal(blockForVerify)
 	if err != nil {
@@ -91,4 +83,14 @@ func (b *Block) Verify() bool { // NOTE: чому воно повертає bool
 		return false
 	}
 	return res
+}
+
+func (b *Block) VerifyTransactions() bool { // XXX: чому воно повертає bool а не error?
+	for _, tx := range b.Transactions {
+		err := tx.Verify()
+		if err != nil {
+			return false
+		}
+	}
+	return true
 }

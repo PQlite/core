@@ -337,7 +337,10 @@ func (n *Node) handleBroadcastMessages() {
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
 			// TODO: видалити транзакції з mempool, якщо вони вже є в блоці
-			if block.Verify() {
+			isBlockValid := block.Verify()
+			isBlocksTXsValids := block.VerifyTransactions()
+
+			if isBlockValid && isBlocksTXsValids {
 				// TODO: додати перевірку транзакцій
 				go n.bs.SaveBlock(&block)
 

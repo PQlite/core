@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha3"
 	"encoding/json"
+	"log"
 	"sort"
 
 	"github.com/PQlite/crypto"
@@ -90,6 +91,7 @@ func (b *Block) VerifyTransactions() bool { // XXX: чому воно повер
 	for _, tx := range b.Transactions {
 		err := tx.Verify()
 		if err != nil {
+			log.Println("помилка перевірки підписку транзакцій: ", err)
 			return false
 		}
 	}

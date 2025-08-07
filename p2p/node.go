@@ -371,6 +371,7 @@ func (n *Node) handleBroadcastMessages() {
 					n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
 				}
 			}
+			log.Println("блок не є валідним")
 		}
 
 		latency := time.Now().UnixMilli() - message.Timestamp

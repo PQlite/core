@@ -338,7 +338,20 @@ func (n *Node) handleBroadcastMessages() {
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
 			// TODO: видалити транзакції з mempool, якщо вони вже є в блоці
 			if block.Verify() {
-				n.bs.SaveBlock(&block)
+				// TODO: додати перевірку транзакцій
+				go n.bs.SaveBlock(&block)
+
+				for _, tx := range block.Transactions {
+					if bytes.Equal(tx.To, []byte(STAKE)) {
+						validator := chain.Validator{
+							Address: tx.PubKey, // NOTE: досі не вирішив, чи я використовую hash або pub
+							Amount:  tx.Amount,
+						}
+
+						n.bs.AddValidator(&validator)
+					}
+				}
+
 				val, err := n.chooseValidator()
 				if err != nil {
 					log.Println("помилка вибору наступного валідатора, ", err)

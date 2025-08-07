@@ -4,7 +4,7 @@ import "github.com/libp2p/go-libp2p/core/protocol"
 
 const (
 	// wallets
-	STAKE        = "stake00000000000000000000000000000000000000000000000"
+	STAKE        = "stake"
 	REWARDWALLET = "reward"
 	REWARD       = float32(1)
 

@@ -70,8 +70,10 @@ func (b *Block) Verify() bool { // NOTE: чому воно повертає bool
 		Proposer:     b.Proposer,
 		Transactions: b.Transactions,
 	}
+
 	blockForVerify.sortTransactions()
 
+	// NOTE: це забагато роботи для однієї функції
 	for _, tx := range blockForVerify.Transactions {
 		err := tx.Verify()
 		if err != nil {

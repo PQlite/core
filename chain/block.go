@@ -86,6 +86,7 @@ func (b *Block) Verify() bool { // XXX: чому воно повертає bool 
 }
 
 func (b *Block) VerifyTransactions() bool { // XXX: чому воно повертає bool а не error?
+	// OPTIMIZE: зробити обробку багатопотоковою
 	for _, tx := range b.Transactions {
 		err := tx.Verify()
 		if err != nil {

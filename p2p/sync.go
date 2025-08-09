@@ -65,7 +65,7 @@ func (n *Node) syncBlockchain() {
 			}
 			n.nextProposer = nextProposer
 
-			if true { // bytes.Equal(nextProposer.Address, n.keys.Pub) {
+			if bytes.Equal(nextProposer.Address, n.keys.Pub) {
 				block := n.createNewBlock()
 
 				data, err := json.Marshal(block)

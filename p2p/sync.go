@@ -90,8 +90,8 @@ func (n *Node) syncBlockchain() {
 			return
 		}
 		if respBlock.Height == localBlockHeight.Height+1 {
-			if !respBlock.Verify() { // FIXME: додати перевірку транзакцій respBlock.VerifyTransactions()
-				log.Println("отриманий блок, не є валідним")
+			if !respBlock.Verify() || !respBlock.VerifyTransactions() {
+				log.Println("отриманий блок/транзакції, не є валідним")
 				return // ISSUE: треба зробити вібір іншого вузла, або повтор
 			} else {
 				log.Printf("блок %d отримано за %d ms", respBlock.Height, time.Now().UnixMilli()-respMsg.Timestamp)

@@ -65,7 +65,7 @@ func (n *Node) syncBlockchain() {
 			}
 			n.nextProposer = nextProposer
 
-			if bytes.Equal(nextProposer.Address, n.keys.Pub) {
+			if true { // bytes.Equal(nextProposer.Address, n.keys.Pub) {
 				block := n.createNewBlock()
 
 				data, err := json.Marshal(block)
@@ -125,3 +125,6 @@ func (n *Node) chooseRandomPeer() *peer.ID {
 	}
 	return nil
 }
+
+// func (n *Node) processNewBlock() {}
+// TODO: написати це, щоб не було повтору в node.go і sync.go

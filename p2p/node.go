@@ -249,7 +249,10 @@ func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, er
 	if err = json.Unmarshal(respBytes, &respMsg); err != nil {
 		return nil, fmt.Errorf("не вдалося розпакувати відповідь: %w", err)
 	}
-	// TODO: додати respMsg.verify
+
+	if !respMsg.verify() {
+		return nil, fmt.Errorf("повідомлення має не вілідний підпис")
+	}
 
 	return &respMsg, nil
 }

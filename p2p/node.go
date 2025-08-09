@@ -344,8 +344,12 @@ func (n *Node) handleBroadcastMessages() {
 			isBlockValid := block.Verify()
 			isBlocksTXsValids := block.VerifyTransactions()
 
-			if isBlockValid && isBlocksTXsValids {
-				// TODO: додати перевірку транзакцій
+			lastLocalBlock, err := n.bs.GetLastBlock()
+			if err != nil {
+				panic(err)
+			}
+
+			if isBlockValid && isBlocksTXsValids && lastLocalBlock.Height < block.Height {
 				go n.bs.SaveBlock(&block)
 
 				for _, tx := range block.Transactions {
@@ -386,12 +390,11 @@ func (n *Node) handleBroadcastMessages() {
 						panic(err)
 					}
 
-					n.topic.broadcast(&blockProposalMsg, n.ctx)
+					go n.topic.broadcast(&blockProposalMsg, n.ctx)
 
 					n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
-
-					continue
 				}
+				continue
 			}
 			log.Println("блок не є валідним")
 		}

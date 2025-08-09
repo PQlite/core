@@ -1,5 +1,6 @@
 // Package chain defines the core data structures and rules of the blockchain,
 // including blocks, transactions, and consensus logic.
+// TODO: треба вирішити, який саме timestamp я використовую для block
 package chain
 
 import (

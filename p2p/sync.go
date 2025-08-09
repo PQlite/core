@@ -89,6 +89,7 @@ func (n *Node) syncBlockchain() {
 			}
 			return
 		}
+		// TODO: додати перевірку балансів, а не тільки підписів
 		if respBlock.Height == localBlockHeight.Height+1 {
 			if !respBlock.Verify() || !respBlock.VerifyTransactions() {
 				log.Println("отриманий блок/транзакції, не є валідним")
@@ -96,6 +97,7 @@ func (n *Node) syncBlockchain() {
 			} else {
 				log.Printf("блок %d отримано за %d ms", respBlock.Height, time.Now().UnixMilli()-respMsg.Timestamp)
 
+				// TODO: додавати баланс до валідатора, а не просто перезаписувати
 				for _, tx := range respBlock.Transactions {
 					if bytes.Equal(tx.To, []byte(STAKE)) {
 						validator := chain.Validator{

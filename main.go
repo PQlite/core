@@ -1,5 +1,4 @@
 // Package main initializes and runs the PQlite blockchain node, handling the setup of all components.
-// TODO: треба вирішити, який саме timestamp я використовую для block
 package main
 
 import (

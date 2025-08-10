@@ -67,12 +67,15 @@ func (n *Node) handleBroadcastMessages() {
 			// Перевірка блоку
 			if err = block.Verify(); err != nil {
 				log.Err(err).Msg("помилка перевірки блоку")
+				return
 			}
 			if err = block.VerifyTransactions(); err != nil {
 				log.Err(err).Msg("транзакції блоку не є валідними")
+				return
 			}
 			if lastLocalBlock.Height+1 != block.Height {
 				log.Error().Uint32("висота отриманого блоку: ", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
+				return
 			}
 
 			go n.bs.SaveBlock(&block)

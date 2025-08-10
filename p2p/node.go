@@ -170,8 +170,6 @@ func (n *Node) peerDiscovery() {
 					res := <-ch
 					if res.Error == nil {
 						log.Info().Str("peer_id", p.ID.String()).Dur("rtt", res.RTT).Msg("ping")
-					} else {
-						log.Err(res.Error).Msg("помилка")
 					}
 				}
 			}

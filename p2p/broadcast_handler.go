@@ -94,13 +94,11 @@ func (n *Node) handleBroadcastMessages() {
 				}
 			}
 
-			log.Debug().Msg("початок вибору валідатора")
 			val, err := n.chooseValidator()
 			if err != nil {
 				log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 				continue
 			}
-			log.Debug().Bytes("address", val.Address).Msg("кінець вибору валідатора")
 
 			// я це і є настпуний валідатор!
 			if bytes.Equal(val.Address, n.keys.Pub) {

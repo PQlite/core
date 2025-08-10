@@ -14,17 +14,15 @@ import (
 func (n *Node) syncBlockchain() {
 	// OPTIMIZE: зробити отримання нових блоків в btach
 	for {
-		//
+		var nextBlockHeight uint32
 		localBlockHeight, err := n.bs.GetLastBlock()
-		if err != nil {
-			localBlockHeight = &chain.Block{Height: 0}
+		if err != nil || localBlockHeight == nil {
+			nextBlockHeight = 0
+		} else {
+			nextBlockHeight = localBlockHeight.Height + 1
 		}
 
-		if localBlockHeight == nil {
-			localBlockHeight = &chain.Block{Height: 0}
-		}
-
-		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
+		data, err := json.Marshal(chain.Block{Height: nextBlockHeight})
 		if err != nil {
 			log.Fatal().Err(err).Msg("помилка розпаковки блоку")
 		}
@@ -56,7 +54,7 @@ func (n *Node) syncBlockchain() {
 		}
 
 		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
-		if respBlock.Height < localBlockHeight.Height+1 {
+		if respBlock.Height < nextBlockHeight {
 			log.Info().Msg("blockchain is up to date!")
 			nextProposer, err := n.chooseValidator()
 			if err != nil {
@@ -90,7 +88,7 @@ func (n *Node) syncBlockchain() {
 			return
 		}
 		// TODO: додати перевірку балансів, а не тільки підписів
-		if respBlock.Height == localBlockHeight.Height+1 {
+		if respBlock.Height == nextBlockHeight {
 			if respBlock.Verify() != nil || respBlock.VerifyTransactions() != nil {
 				log.Warn().Msg("отриманий блок/транзакції, не є валідним")
 				return // ISSUE: треба зробити вібір іншого вузла, або повтор

@@ -34,7 +34,7 @@ func (n *Node) createNewBlock() chain.Block {
 
 	log.Info().Msg("очікування транзакцій для нового блоку")
 	for n.mempool.Len() < 1 {
-		time.Sleep(1 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	ublock := chain.BlockForSign{

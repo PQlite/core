@@ -67,7 +67,7 @@ func (n *Node) handleBroadcastMessages() {
 				log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
 			}
 
-			if isBlockValid == nil && isBlocksTXsValids == nil && lastLocalBlock.Height < block.Height {
+			if isBlockValid == nil && isBlocksTXsValids == nil && lastLocalBlock.Height+1 == block.Height {
 				go n.bs.SaveBlock(&block)
 
 				for _, tx := range block.Transactions {

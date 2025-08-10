@@ -126,3 +126,36 @@ func (bs *BlockStorage) GetLastBlock() (*chain.Block, error) {
 
 	return lastBlock, nil
 }
+
+func (bs *BlockStorage) GetAllBlocks() ([]*chain.Block, error) {
+	var blocks []*chain.Block
+
+	err := bs.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = []byte("block:")
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			err := item.Value(func(val []byte) error {
+				var block chain.Block
+				if err := json.Unmarshal(val, &block); err != nil {
+					return err
+				}
+				blocks = append(blocks, &block)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return blocks, nil
+}

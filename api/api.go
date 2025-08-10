@@ -62,6 +62,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/", s.handleGetStatus)
 	s.app.Get("/block/:id", s.handleGetBlock)
 	s.app.Get("/txs", s.handleGetMempoolLen)
+	s.app.Get("/blocks", s.handleGetAllBlocks)
 	s.app.Post("/tx", s.handlePostTx)
 }
 
@@ -96,6 +97,16 @@ func (s *Server) handleGetBlock(c *fiber.Ctx) error {
 		})
 	}
 	return c.JSON(block)
+}
+
+func (s *Server) handleGetAllBlocks(c *fiber.Ctx) error {
+	blocks, err := s.bs.GetAllBlocks()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	return c.JSON(blocks)
 }
 
 // handlePostTx обробляє нову транзакцію.

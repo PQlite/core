@@ -47,7 +47,7 @@ func (n *Node) handleBroadcastMessages() {
 			if err != nil {
 				log.Warn().Err(err).Msg("отрмана транзакція не була додана до mempool")
 			}
-		case MsgBlockProposal:
+		case MsgBlockProposal: // FIXME: тут щось дуже дивне відбуваєтся. воно або створює два блоки за раз, або не правельно записує Height блоку
 			var block chain.Block
 			err = json.Unmarshal(message.Data, &block)
 			if err != nil {

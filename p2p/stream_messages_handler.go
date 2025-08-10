@@ -4,19 +4,19 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/PQlite/core/chain"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/rs/zerolog/log"
 )
 
 func (n *Node) handleStreamMessages(stream network.Stream) {
-	log.Printf("Отримано новий прямий потік від %s", stream.Conn().RemoteMultiaddr())
+	log.Info().Str("from", stream.Conn().RemoteMultiaddr().String()).Msg("Отримано новий прямий потік")
 	defer func() {
 		// stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
-		//                         я дізнався що це щось страше
+		//                         я дізнався що це щось страшне
 		stream.Close()
 	}()
 
@@ -25,14 +25,14 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 	// Читаємо дані до символу нового рядка. Це простий спосіб розділяти повідомлення.
 	reqBytes, err := reader.ReadBytes('\n')
 	if err != nil {
-		log.Println("Помилка читання з потоку:", err)
+		log.Error().Err(err).Msg("Помилка читання з потоку")
 		return
 	}
 
 	var msg Message
 	err = json.Unmarshal(reqBytes, &msg)
 	if err != nil {
-		log.Println("Помилка розпаковки повідомлення:", err)
+		log.Error().Err(err).Msg("Помилка розпаковки повідомлення")
 		return
 	}
 
@@ -40,18 +40,18 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 	case MsgRequestBlock: // HACK: ну тут треба точно переписувати, тому що зараз це жахливо
 		var data chain.Block
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			log.Println("помилка розпаковки block з запиту на блок")
+			log.Error().Err(err).Msg("помилка розпаковки block з запиту на блок")
 			return
 		}
 		lastBlock, err := n.bs.GetLastBlock()
 		if err != nil {
-			log.Println("помилка бази даних: ", err)
+			log.Error().Err(err).Msg("помилка бази даних")
 			return
 		}
 		if lastBlock.Height <= data.Height {
 			respBlockBytes, err := json.Marshal(lastBlock)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка розпаковки останнього блоку")
 			}
 
 			respMsg := Message{
@@ -63,27 +63,27 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 
 			err = respMsg.sign(n.keys.Priv)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка підпису повідомлення")
 			}
 
 			respBytes, err := json.Marshal(respMsg)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка розпаковки повідомлення")
 			}
 			writer := bufio.NewWriter(stream)
 			_, err = writer.Write(append(respBytes, '\n'))
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка запису в потік")
 			}
 			writer.Flush()
 		} else {
 			reqBlock, err := n.bs.GetBlock(data.Height)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка отримання блоку")
 			}
 			reqBlockBytes, err := json.Marshal(reqBlock)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка розпаковки блоку")
 			}
 
 			respMsg := Message{
@@ -95,18 +95,18 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 
 			err = respMsg.sign(n.keys.Priv)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка підпису повідомлення")
 			}
 
 			respBytes, err := json.Marshal(respMsg)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка розпаковки повідомлення")
 			}
 
 			writer := bufio.NewWriter(stream)
 			_, err = writer.Write(append(respBytes, '\n'))
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка запису в потік")
 			}
 		}
 	}
@@ -150,3 +150,4 @@ func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, er
 
 	return &respMsg, nil
 }
+

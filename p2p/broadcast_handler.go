@@ -3,10 +3,10 @@ package p2p
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/PQlite/core/chain"
+	"github.com/rs/zerolog/log"
 )
 
 // Читання вхідних повідомлень
@@ -14,23 +14,23 @@ func (n *Node) handleBroadcastMessages() {
 	for {
 		msg, err := n.topic.sub.Next(n.ctx)
 		if err != nil {
-			log.Println("помилка при отриманні повідомлення: ", err)
+			log.Error().Err(err).Msg("помилка при отриманні повідомлення")
 		}
 
 		var message Message
 		err = json.Unmarshal(msg.Data, &message)
 		if err != nil {
-			log.Println("помилка розпаковки повідомлення: ", err)
+			log.Error().Err(err).Msg("помилка розпаковки повідомлення")
 			continue
 		}
 
 		if msg.ReceivedFrom == n.host.ID() && message.Type != MsgBlockProposal { // HACK: якщо цього не буде, то воно не зможе запустити створення ще оного блоку
-			log.Println("повідомлення від себе")
+			log.Debug().Msg("повідомлення від себе")
 			continue
 		}
 
 		if !message.verify() {
-			log.Println("підпис повідомлення not valid")
+			log.Warn().Msg("підпис повідомлення not valid")
 			continue
 		}
 
@@ -39,21 +39,22 @@ func (n *Node) handleBroadcastMessages() {
 			var tx chain.Transaction
 			err = json.Unmarshal(message.Data, &tx)
 			if err != nil {
+				log.Error().Err(err).Msg("помилка розпаковки транзакції")
 				continue
 			}
 
 			err = n.mempool.Add(&tx)
 			if err != nil {
-				log.Println("отрмана транзакція не була додана до mempool через", err)
+				log.Warn().Err(err).Msg("отрмана транзакція не була додана до mempool")
 			}
 		case MsgBlockProposal:
 			var block chain.Block
 			err = json.Unmarshal(message.Data, &block)
 			if err != nil {
-				log.Println("помилка розпаковки blockProposal")
+				log.Error().Err(err).Msg("помилка розпаковки blockProposal")
 				continue
 			}
-			log.Printf("отримано новий блок: %d", block.Height)
+			log.Info().Uint32("height", block.Height).Msg("отримано новий блок")
 
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
@@ -63,10 +64,10 @@ func (n *Node) handleBroadcastMessages() {
 
 			lastLocalBlock, err := n.bs.GetLastBlock()
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
 			}
 
-			if isBlockValid && isBlocksTXsValids && lastLocalBlock.Height < block.Height {
+			if isBlockValid == nil && isBlocksTXsValids == nil && lastLocalBlock.Height < block.Height {
 				go n.bs.SaveBlock(&block)
 
 				for _, tx := range block.Transactions {
@@ -82,7 +83,7 @@ func (n *Node) handleBroadcastMessages() {
 
 				val, err := n.chooseValidator()
 				if err != nil {
-					log.Println("помилка вибору наступного валідатора, ", err)
+					log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 					continue
 				}
 
@@ -92,7 +93,7 @@ func (n *Node) handleBroadcastMessages() {
 
 					newBlockBytes, err := json.Marshal(newBlock)
 					if err != nil {
-						panic(err)
+						log.Fatal().Err(err).Msg("помилка розпаковки нового блоку")
 					}
 
 					blockProposalMsg := Message{
@@ -104,7 +105,7 @@ func (n *Node) handleBroadcastMessages() {
 
 					err = blockProposalMsg.sign(n.keys.Priv)
 					if err != nil {
-						panic(err)
+						log.Fatal().Err(err).Msg("помилка підпису нового блоку")
 					}
 
 					go n.topic.broadcast(&blockProposalMsg, n.ctx)
@@ -113,10 +114,10 @@ func (n *Node) handleBroadcastMessages() {
 				}
 				continue
 			}
-			log.Println("блок не є валідним")
+			log.Warn().Msg("блок не є валідним")
 		}
 
 		latency := time.Now().UnixMilli() - message.Timestamp
-		log.Println("oтримано за ", latency, "ms")
+		log.Info().Int64("latency", latency).Msg("oтримано")
 	}
 }

@@ -4,7 +4,6 @@ package p2p
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -17,6 +16,7 @@ import (
 	discovery_routing "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
+	"github.com/rs/zerolog/log"
 )
 
 type Node struct {
@@ -36,7 +36,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 
 	priv, err := LoadOrCreateIdentity(".node.key")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err).Msg("помилка завантаження ідентифікатора")
 	}
 
 	node, err := libp2p.New(
@@ -76,12 +76,12 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 
 	keys, err := LoadKeys()
 	if err != nil {
-		log.Println("помилка завантаження ключів")
+		log.Error().Err(err).Msg("помилка завантаження ключів")
 		return Node{}, err
 	}
 
 	for _, p := range node.Addrs() {
-		log.Println(p.String(), node.ID().String())
+		log.Info().Str("address", p.String()).Str("peer_id", node.ID().String()).Msg("p2p node address")
 	}
 
 	return Node{
@@ -111,21 +111,21 @@ func (n *Node) Start() {
 
 	<-n.ctx.Done()
 	n.host.Close()
-	log.Println("отримано команду зупинки в Node")
+	log.Info().Msg("отримано команду зупинки в Node")
 }
 
 func (n *Node) handleTxCh() {
 	for {
 		select {
 		case tx := <-n.TxCh:
-			log.Printf("Received new transaction %x from API", tx.From)
+			log.Info().Hex("tx_from", tx.From).Msg("Received new transaction from API")
 
 			if err := n.mempool.Add(tx); err != nil {
-				log.Println("помилка додавання транзакції в mempool: ", err)
+				log.Error().Err(err).Msg("помилка додавання транзакції в mempool")
 			} else {
 				txBytes, err := json.Marshal(tx)
 				if err != nil {
-					log.Println(err)
+					log.Error().Err(err).Msg("помилка розпаковки транзакції")
 					continue
 				}
 
@@ -137,7 +137,7 @@ func (n *Node) handleTxCh() {
 				}
 				err = m.sign(n.keys.Priv)
 				if err != nil {
-					log.Println("sing error: ", err)
+					log.Error().Err(err).Msg("sing error")
 					continue
 				}
 
@@ -160,7 +160,7 @@ func (n *Node) peerDiscovery() {
 		case <-ticker.C:
 			peerChan, err := routingDiscovery.FindPeers(n.ctx, ns)
 			if err != nil {
-				panic(err)
+				log.Fatal().Err(err).Msg("помилка пошуку пірів")
 			}
 
 			for p := range peerChan {
@@ -168,7 +168,7 @@ func (n *Node) peerDiscovery() {
 					ch := ping.Ping(n.ctx, n.host, p.ID)
 					res := <-ch
 					if res.Error == nil {
-						log.Println(res.RTT)
+						log.Info().Str("peer_id", p.ID.String()).Dur("rtt", res.RTT).Msg("ping")
 					}
 				}
 			}
@@ -182,13 +182,13 @@ func (n *Node) connectingToBootstrap() {
 	for _, addr := range BOOTSTRAPLIST {
 		pi, err := peer.AddrInfoFromString(addr)
 		if err != nil {
-			log.Println("помилка отримання адреси bootstrap: ", err)
+			log.Error().Err(err).Str("address", addr).Msg("помилка отримання адреси bootstrap")
 		}
 		err = n.host.Connect(n.ctx, *pi)
 		if err != nil {
-			log.Println("помилка підключення до bootstrap: ", err)
+			log.Error().Err(err).Str("address", addr).Msg("помилка підключення до bootstrap")
 		} else {
-			log.Println("підключено до ", pi.Addrs)
+			log.Info().Str("address", pi.Addrs[0].String()).Msg("підключено до bootstrap")
 		}
 	}
 }

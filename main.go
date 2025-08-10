@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,20 +12,20 @@ import (
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/core/database"
 	"github.com/PQlite/core/p2p"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
 	bs, err := database.InitDB()
 	if err != nil {
-		log.Println("помилка initdb ", err)
-		return
+		log.Fatal().Err(err).Msg("помилка initdb")
 	}
 	mempool := chain.Mempool{}
 	ctx := context.Background()
 
 	node, err := p2p.NewNode(ctx, &mempool, bs)
 	if err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("помилка створення p2p ноди")
 	}
 
 	server := api.NewServer(&node, &mempool, bs)

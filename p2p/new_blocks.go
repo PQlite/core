@@ -2,10 +2,10 @@ package p2p
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/PQlite/core/chain"
+	"github.com/rs/zerolog/log"
 )
 
 func (n *Node) chooseValidator() (chain.Validator, error) {
@@ -29,11 +29,10 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 func (n *Node) createNewBlock() chain.Block {
 	lastBlock, err := n.bs.GetLastBlock()
 	if err != nil {
-		// NOTE: може не найкращів варіант
-		panic(err)
+		log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
 	}
 
-	log.Println("очікування транзакцій для нового блоку")
+	log.Info().Msg("очікування транзакцій для нового блоку")
 	for len(n.mempool.TXs) < 1 {
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -50,7 +49,7 @@ func (n *Node) createNewBlock() chain.Block {
 
 	block, err := ublock.Sign(n.keys.Priv)
 	if err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("помилка підпису блоку")
 	}
 
 	n.mempool.TXs = nil // очищення TXs
@@ -70,7 +69,7 @@ func (n *Node) addRewardTx(b *chain.BlockForSign) {
 
 	err := tx.Sign(n.keys.Priv)
 	if err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("помилка підпису транзакції")
 	}
 
 	b.Transactions = append(b.Transactions, &tx)

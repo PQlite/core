@@ -5,9 +5,9 @@ package chain
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/PQlite/crypto"
+	"github.com/rs/zerolog/log"
 )
 
 type Transaction struct {
@@ -51,7 +51,7 @@ func (t *Transaction) Verify() error {
 	unTx := t.GetUnsignTransaction()
 	data, err := json.Marshal(unTx)
 	if err != nil {
-		log.Printf("Помилка під час серіалізації транзакції для перевірки: %v", err)
+		log.Error().Err(err).Msg("Помилка під час серіалізації транзакції для перевірки")
 		return err
 	}
 

@@ -4,11 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"log"
 	"os"
 
 	"github.com/PQlite/crypto"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/rs/zerolog/log"
 )
 
 type Keys struct {
@@ -47,35 +47,30 @@ func LoadKeys() (*Keys, error) {
 	if err == nil {
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			log.Println("", err)
 			return nil, err
 		}
 		var keys Keys
 		err = json.Unmarshal(data, &keys)
 		if err != nil {
-			log.Println("", err)
 			return nil, err
 		}
 		return &keys, nil
 	} else {
+		log.Info().Msg("не знайдено ключів, створюю нові")
 		pub, priv, err := crypto.Create()
 		if err != nil {
-			log.Println(err)
 			return nil, err
 		}
 		binPriv, err := priv.MarshalBinary()
 		if err != nil {
-			log.Println("", err)
 			return nil, err
 		}
 		binPub, err := pub.MarshalBinary()
 		if err != nil {
-			log.Println("", err)
 			return nil, err
 		}
 		err = save(binPriv, binPub)
 		if err != nil {
-			log.Println("", err)
 			return nil, err
 		}
 		return &Keys{Priv: binPriv, Pub: binPub}, nil

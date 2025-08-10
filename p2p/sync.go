@@ -3,12 +3,12 @@ package p2p
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/PQlite/core/chain"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/rs/zerolog/log"
 )
 
 func (n *Node) syncBlockchain() {
@@ -26,7 +26,7 @@ func (n *Node) syncBlockchain() {
 
 		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
 		if err != nil {
-			panic(err)
+			log.Fatal().Err(err).Msg("помилка розпаковки блоку")
 		}
 
 		m := Message{
@@ -37,30 +37,30 @@ func (n *Node) syncBlockchain() {
 		}
 		err = m.sign(n.keys.Priv)
 		if err != nil {
-			panic(err)
+			log.Fatal().Err(err).Msg("помилка підпису повідомлення")
 		}
 
 		peerForSync := n.chooseRandomPeer()
 		if peerForSync == nil {
-			log.Println("не було знайдено peer для синхронізації")
+			log.Warn().Msg("не було знайдено peer для синхронізації")
 			return
 		}
 		respMsg, err := n.sendStreamMessage(*peerForSync, &m)
 		if err != nil {
-			panic(err)
+			log.Fatal().Err(err).Msg("помилка відправки повідомлення")
 		}
 
 		var respBlock chain.Block
 		if err = json.Unmarshal(respMsg.Data, &respBlock); err != nil {
-			panic(err)
+			log.Fatal().Err(err).Msg("помилка розпаковки блоку")
 		}
 
 		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
 		if respBlock.Height < localBlockHeight.Height+1 {
-			log.Println("blockchain is up to date!")
+			log.Info().Msg("blockchain is up to date!")
 			nextProposer, err := n.chooseValidator()
 			if err != nil {
-				log.Println("помилка вибору наступного валідатора:", err)
+				log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 				return
 			}
 			n.nextProposer = nextProposer
@@ -70,7 +70,7 @@ func (n *Node) syncBlockchain() {
 
 				data, err := json.Marshal(block)
 				if err != nil {
-					panic(err)
+					log.Fatal().Err(err).Msg("помилка розпаковки блоку")
 				}
 
 				msg := Message{
@@ -81,7 +81,7 @@ func (n *Node) syncBlockchain() {
 				}
 				err = msg.sign(n.keys.Priv)
 				if err != nil {
-					panic(err)
+					log.Fatal().Err(err).Msg("помилка підпису повідомлення")
 				}
 
 				n.topic.broadcast(&msg, n.ctx)
@@ -91,11 +91,11 @@ func (n *Node) syncBlockchain() {
 		}
 		// TODO: додати перевірку балансів, а не тільки підписів
 		if respBlock.Height == localBlockHeight.Height+1 {
-			if !respBlock.Verify() || !respBlock.VerifyTransactions() {
-				log.Println("отриманий блок/транзакції, не є валідним")
+			if respBlock.Verify() != nil || respBlock.VerifyTransactions() != nil {
+				log.Warn().Msg("отриманий блок/транзакції, не є валідним")
 				return // ISSUE: треба зробити вібір іншого вузла, або повтор
 			} else {
-				log.Printf("блок %d отримано за %d ms", respBlock.Height, time.Now().UnixMilli()-respMsg.Timestamp)
+				log.Info().Uint32("height", respBlock.Height).Int64("latency", time.Now().UnixMilli()-respMsg.Timestamp).Msg("блок отримано")
 
 				// TODO: додавати баланс до валідатора, а не просто перезаписувати
 				for _, tx := range respBlock.Transactions {
@@ -105,7 +105,7 @@ func (n *Node) syncBlockchain() {
 							Amount:  tx.Amount,
 						}
 						n.bs.AddValidator(&validator)
-						log.Println("додано валідатора:", validator.Amount)
+						log.Info().Float32("amount", validator.Amount).Msg("додано валідатора")
 					}
 				}
 

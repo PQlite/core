@@ -3,14 +3,14 @@
 package api
 
 import (
-	"log"
 	"strconv"
+	"time"
 
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/core/database"
 	"github.com/PQlite/core/p2p"
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/rs/zerolog/log"
 )
 
 // Server представляє HTTP-сервер API.
@@ -25,9 +25,26 @@ type Server struct {
 func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage) *Server {
 	app := fiber.New()
 
-	app.Use(logger.New(logger.Config{
-		Format: "[${time}] ${ip}:${port} ${status} - ${method} ${path} ${latency} ${error} ${ua}\n",
-	}))
+	app.Use(func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+
+		statusCode := c.Response().StatusCode()
+		event := log.Info()
+		if err != nil {
+			event = log.Error().Err(err)
+		}
+
+		event.Str("method", c.Method()).
+			Str("path", c.Path()).
+			Int("status", statusCode).
+			Dur("latency", time.Since(start)).
+			Str("ip", c.IP()).
+			Str("user_agent", c.Get("User-Agent")).
+			Msg("request")
+
+		return err
+	})
 
 	server := &Server{
 		app:     app,
@@ -85,7 +102,7 @@ func (s *Server) handleGetBlock(c *fiber.Ctx) error {
 func (s *Server) handlePostTx(c *fiber.Ctx) error {
 	var tx chain.Transaction
 	if err := c.BodyParser(&tx); err != nil {
-		log.Println("помилка транзакції: ", err)
+		log.Error().Err(err).Msg("помилка транзакції")
 		return c.Status(400).SendString("Invalid tx")
 	}
 
@@ -103,5 +120,5 @@ func (s *Server) handleGetMempoolLen(c *fiber.Ctx) error {
 
 // Start запускає HTTP-сервер.
 func (s *Server) Start() {
-	log.Fatal(s.app.Listen(":8081"))
+	log.Fatal().Err(s.app.Listen(":8081")).Msg("помилка запуску http серверу")
 }

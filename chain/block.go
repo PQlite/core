@@ -7,10 +7,11 @@ import (
 	"bytes"
 	"crypto/sha3"
 	"encoding/json"
-	"log"
+	"fmt"
 	"sort"
 
 	"github.com/PQlite/crypto"
+	"github.com/rs/zerolog/log"
 )
 
 type Block struct {
@@ -64,7 +65,7 @@ func (b *BlockForSign) Sign(binPriv []byte) (Block, error) {
 	}, nil
 }
 
-func (b *Block) Verify() bool { // XXX: чому воно повертає bool а не error?
+func (b *Block) Verify() error {
 	blockForVerify := BlockForSign{
 		Height:       b.Height,
 		Timestamp:    b.Timestamp,
@@ -77,27 +78,29 @@ func (b *Block) Verify() bool { // XXX: чому воно повертає bool 
 
 	binBlockForVerify, err := json.Marshal(blockForVerify)
 	if err != nil {
-		log.Println("помилка json.Marshal в verify: ", err)
-		return false
+		log.Error().Err(err).Msg("помилка json.Marshal в verify")
+		return err
 	}
 
 	res, err := crypto.Verify(b.Proposer, binBlockForVerify, b.Signature)
 	if err != nil {
-		log.Println("помилка перевірки підпису блоку: ", err)
-		return false
+		log.Error().Err(err).Msg("помилка перевірки підпису блоку")
+		return err
 	}
-	log.Println("подпис блоку є ", res)
-	return res
+	if !res {
+		return fmt.Errorf("invalid block signature")
+	}
+	return nil
 }
 
-func (b *Block) VerifyTransactions() bool { // XXX: чому воно повертає bool а не error?
+func (b *Block) VerifyTransactions() error {
 	// OPTIMIZE: зробити обробку багатопотоковою
 	for _, tx := range b.Transactions {
 		err := tx.Verify()
 		if err != nil {
-			log.Println("помилка перевірки підписку транзакцій: ", err)
-			return false
+			log.Error().Err(err).Msg("помилка перевірки підписку транзакцій")
+			return err
 		}
 	}
-	return true
+	return nil
 }

@@ -2,11 +2,8 @@
 package p2p
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"time"
 
@@ -15,7 +12,6 @@ import (
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
 	discovery_routing "github.com/libp2p/go-libp2p/p2p/discovery/routing"
@@ -118,145 +114,6 @@ func (n *Node) Start() {
 	log.Println("отримано команду зупинки в Node")
 }
 
-func (n *Node) handleStreamMessages(stream network.Stream) {
-	log.Printf("Отримано новий прямий потік від %s", stream.Conn().RemoteMultiaddr())
-	defer func() {
-		// stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
-		//                         я дізнався що це щось страше
-		stream.Close()
-	}()
-
-	// Створюємо reader для читання даних з потоку
-	reader := bufio.NewReader(stream)
-	// Читаємо дані до символу нового рядка. Це простий спосіб розділяти повідомлення.
-	reqBytes, err := reader.ReadBytes('\n')
-	if err != nil {
-		log.Println("Помилка читання з потоку:", err)
-		return
-	}
-
-	var msg Message
-	err = json.Unmarshal(reqBytes, &msg)
-	if err != nil {
-		log.Println("Помилка розпаковки повідомлення:", err)
-		return
-	}
-
-	switch msg.Type {
-	case MsgRequestBlock: // HACK: ну тут треба точно переписувати, тому що зараз це жахливо
-		var data chain.Block
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			log.Println("помилка розпаковки block з запиту на блок")
-			return
-		}
-		lastBlock, err := n.bs.GetLastBlock()
-		if err != nil {
-			log.Println("помилка бази даних: ", err)
-			return
-		}
-		if lastBlock.Height <= data.Height {
-			respBlockBytes, err := json.Marshal(lastBlock)
-			if err != nil {
-				panic(err)
-			}
-
-			respMsg := Message{
-				Type:      MsgResponeBlock,
-				Timestamp: time.Now().UnixMilli(),
-				Data:      respBlockBytes,
-				Pub:       n.keys.Pub,
-			}
-
-			err = respMsg.sign(n.keys.Priv)
-			if err != nil {
-				panic(err)
-			}
-
-			respBytes, err := json.Marshal(respMsg)
-			if err != nil {
-				panic(err)
-			}
-			writer := bufio.NewWriter(stream)
-			_, err = writer.Write(append(respBytes, '\n'))
-			if err != nil {
-				panic(err)
-			}
-			writer.Flush()
-		} else {
-			reqBlock, err := n.bs.GetBlock(data.Height)
-			if err != nil {
-				panic(err)
-			}
-			reqBlockBytes, err := json.Marshal(reqBlock)
-			if err != nil {
-				panic(err)
-			}
-
-			respMsg := Message{
-				Type:      MsgResponeBlock,
-				Timestamp: time.Now().UnixMilli(),
-				Data:      reqBlockBytes,
-				Pub:       n.keys.Pub,
-			}
-
-			err = respMsg.sign(n.keys.Priv)
-			if err != nil {
-				panic(err)
-			}
-
-			respBytes, err := json.Marshal(respMsg)
-			if err != nil {
-				panic(err)
-			}
-
-			writer := bufio.NewWriter(stream)
-			_, err = writer.Write(append(respBytes, '\n'))
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
-}
-
-func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, error) {
-	stream, err := n.host.NewStream(n.ctx, targetPeer, directProtocol)
-	if err != nil {
-		return nil, fmt.Errorf("не вдалося відкрити потік: %w", err)
-	}
-	defer stream.Close()
-
-	writer := bufio.NewWriter(stream)
-	reader := bufio.NewReader(stream)
-
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = writer.Write(append(msgBytes, '\n'))
-	if err != nil {
-		stream.Reset()
-		return nil, err
-	}
-	writer.Flush()
-
-	respBytes, err := reader.ReadBytes('\n')
-	if err != nil {
-		return nil, fmt.Errorf("не вдалося прочитати відповідь: %w", err)
-	}
-
-	var respMsg Message
-	if err = json.Unmarshal(respBytes, &respMsg); err != nil {
-		return nil, fmt.Errorf("не вдалося розпакувати відповідь: %w", err)
-	}
-
-	if !respMsg.verify() {
-		return nil, fmt.Errorf("повідомлення має не вілідний підпис")
-	}
-
-	return &respMsg, nil
-}
-
 func (n *Node) handleTxCh() {
 	for {
 		select {
@@ -289,118 +146,6 @@ func (n *Node) handleTxCh() {
 		case <-n.ctx.Done():
 			return
 		}
-	}
-}
-
-// Читання вхідних повідомлень
-func (n *Node) handleBroadcastMessages() {
-	for {
-		msg, err := n.topic.sub.Next(n.ctx)
-		if err != nil {
-			log.Println("помилка при отриманні повідомлення: ", err)
-		}
-
-		var message Message
-		err = json.Unmarshal(msg.Data, &message)
-		if err != nil {
-			log.Println("помилка розпаковки повідомлення: ", err)
-			continue
-		}
-
-		if msg.ReceivedFrom == n.host.ID() && message.Type != MsgBlockProposal { // HACK: якщо цього не буде, то воно не зможе запустити створення ще оного блоку
-			log.Println("повідомлення від себе")
-			continue
-		}
-
-		if !message.verify() {
-			log.Println("підпис повідомлення not valid")
-			continue
-		}
-
-		switch message.Type {
-		case MsgNewTransaction:
-			var tx chain.Transaction
-			err = json.Unmarshal(message.Data, &tx)
-			if err != nil {
-				continue
-			}
-
-			err = n.mempool.Add(&tx)
-			if err != nil {
-				log.Println("отрмана транзакція не була додана до mempool через", err)
-			}
-		case MsgBlockProposal:
-			var block chain.Block
-			err = json.Unmarshal(message.Data, &block)
-			if err != nil {
-				log.Println("помилка розпаковки blockProposal")
-				continue
-			}
-			log.Printf("отримано новий блок: %d", block.Height)
-
-			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
-			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
-			// TODO: видалити транзакції з mempool, якщо вони вже є в блоці
-			isBlockValid := block.Verify()
-			isBlocksTXsValids := block.VerifyTransactions()
-
-			lastLocalBlock, err := n.bs.GetLastBlock()
-			if err != nil {
-				panic(err)
-			}
-
-			if isBlockValid && isBlocksTXsValids && lastLocalBlock.Height < block.Height {
-				go n.bs.SaveBlock(&block)
-
-				for _, tx := range block.Transactions {
-					if bytes.Equal(tx.To, []byte(STAKE)) {
-						validator := chain.Validator{
-							Address: tx.PubKey, // NOTE: досі не вирішив, чи я використовую hash або pub
-							Amount:  tx.Amount,
-						}
-
-						n.bs.AddValidator(&validator)
-					}
-				}
-
-				val, err := n.chooseValidator()
-				if err != nil {
-					log.Println("помилка вибору наступного валідатора, ", err)
-					continue
-				}
-
-				// я це і є настпуний валідатор!
-				if bytes.Equal(val.Address, n.keys.Pub) {
-					newBlock := n.createNewBlock()
-
-					newBlockBytes, err := json.Marshal(newBlock)
-					if err != nil {
-						panic(err)
-					}
-
-					blockProposalMsg := Message{
-						Type:      MsgBlockProposal,
-						Timestamp: time.Now().UnixMilli(),
-						Data:      newBlockBytes,
-						Pub:       n.keys.Pub,
-					}
-
-					err = blockProposalMsg.sign(n.keys.Priv)
-					if err != nil {
-						panic(err)
-					}
-
-					go n.topic.broadcast(&blockProposalMsg, n.ctx)
-
-					n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
-				}
-				continue
-			}
-			log.Println("блок не є валідним")
-		}
-
-		latency := time.Now().UnixMilli() - message.Timestamp
-		log.Println("oтримано за ", latency, "ms")
 	}
 }
 

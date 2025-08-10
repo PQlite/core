@@ -6,6 +6,7 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/rs/zerolog/log"
 )
 
 type Topic struct {
@@ -19,14 +20,17 @@ func topicInit(ctx context.Context, node host.Host) (Topic, error) {
 	if err != nil {
 		return Topic{}, err
 	}
+
 	topic, err := ps.Join("test-topic")
 	if err != nil {
 		return Topic{}, err
 	}
+
 	sub, err := topic.Subscribe()
 	if err != nil {
 		return Topic{}, err
 	}
+
 	return Topic{
 		topic: topic,
 		sub:   sub,
@@ -39,7 +43,11 @@ func (t Topic) broadcast(message *Message, ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return t.topic.Publish(ctx, data)
+	err = t.topic.Publish(ctx, data)
+	if err != nil {
+		log.Error().Err(err).Msg("помилка трансляції повідомлення")
+	}
+	return err
 }
 
 // TODO: зробити відправку повідомлень на 1-2 ноди, для sync з blockchain

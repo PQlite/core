@@ -24,9 +24,12 @@ func (n *Node) handleBroadcastMessages() {
 			continue
 		}
 
-		if msg.ReceivedFrom == n.host.ID() && message.Type != MsgBlockProposal { // HACK: якщо цього не буде, то воно не зможе запустити створення ще оного блоку
-			log.Debug().Msg("повідомлення від себе")
-			continue
+		if msg.ReceivedFrom == n.host.ID() {
+			if message.Type != MsgBlockProposal {
+				log.Debug().Msg("повідомлення від себе")
+				continue
+			}
+			log.Debug().Msg("отримано власний блок")
 		}
 
 		if !message.verify() {
@@ -78,7 +81,7 @@ func (n *Node) handleBroadcastMessages() {
 				return
 			}
 
-			go n.bs.SaveBlock(&block)
+			n.bs.SaveBlock(&block)
 
 			for _, tx := range block.Transactions {
 				if bytes.Equal(tx.To, []byte(STAKE)) {
@@ -91,11 +94,13 @@ func (n *Node) handleBroadcastMessages() {
 				}
 			}
 
+			log.Debug().Msg("початок вибору валідатора")
 			val, err := n.chooseValidator()
 			if err != nil {
 				log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 				continue
 			}
+			log.Debug().Bytes("address", val.Address).Msg("кінець вибору валідатора")
 
 			// я це і є настпуний валідатор!
 			if bytes.Equal(val.Address, n.keys.Pub) {
@@ -118,7 +123,10 @@ func (n *Node) handleBroadcastMessages() {
 					log.Fatal().Err(err).Msg("помилка підпису нового блоку")
 				}
 
-				go n.topic.broadcast(&blockProposalMsg, n.ctx)
+				err = n.topic.broadcast(&blockProposalMsg, n.ctx)
+				if err != nil {
+					log.Error().Err(err).Msg("помилка трансляції нового блоку")
+				}
 
 				n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
 			}

@@ -98,20 +98,21 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 
 // Start Запуск p2p сервер
 func (n *Node) Start() {
-	n.host.SetStreamHandler(directProtocol, n.handleStreamMessages)
-
 	// Підключення до bootstrap
 	n.connectingToBootstrap()
 
 	go n.peerDiscovery()
 	go n.handleTxCh()
+
+	// Handlers
 	go n.handleBroadcastMessages()
+	go n.host.SetStreamHandler(directProtocol, n.handleStreamMessages)
 
 	n.syncBlockchain()
 
 	<-n.ctx.Done()
-	n.host.Close()
 	log.Info().Msg("отримано команду зупинки в Node")
+	n.host.Close()
 }
 
 func (n *Node) handleTxCh() {
@@ -163,12 +164,14 @@ func (n *Node) peerDiscovery() {
 				log.Fatal().Err(err).Msg("помилка пошуку пірів")
 			}
 
-			for p := range peerChan {
+			for p := range peerChan { // FIXME: помилка після 2 ping
 				if p.ID != n.host.ID() {
 					ch := ping.Ping(n.ctx, n.host, p.ID)
 					res := <-ch
 					if res.Error == nil {
 						log.Info().Str("peer_id", p.ID.String()).Dur("rtt", res.RTT).Msg("ping")
+					} else {
+						log.Err(res.Error).Msg("помилка")
 					}
 				}
 			}

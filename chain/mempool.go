@@ -36,3 +36,8 @@ func (m *Mempool) Add(tx *Transaction) error {
 
 	return nil
 }
+
+func (m *Mempool) Len() int {
+	m.mu.Lock()
+	return len(m.TXs)
+}

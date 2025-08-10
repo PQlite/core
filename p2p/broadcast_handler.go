@@ -59,62 +59,67 @@ func (n *Node) handleBroadcastMessages() {
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
 			// TODO: видалити транзакції з mempool, якщо вони вже є в блоці
-			isBlockValid := block.Verify()
-			isBlocksTXsValids := block.VerifyTransactions()
-
 			lastLocalBlock, err := n.bs.GetLastBlock()
 			if err != nil {
 				log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
 			}
 
-			if isBlockValid == nil && isBlocksTXsValids == nil && lastLocalBlock.Height+1 == block.Height {
-				go n.bs.SaveBlock(&block)
+			// Перевірка блоку
+			if err = block.Verify(); err != nil {
+				log.Err(err).Msg("помилка перевірки блоку")
+			}
+			if err = block.VerifyTransactions(); err != nil {
+				log.Err(err).Msg("транзакції блоку не є валідними")
+			}
+			if lastLocalBlock.Height+1 != block.Height {
+				log.Error().Uint32("висота отриманого блоку: ", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
+			}
 
-				for _, tx := range block.Transactions {
-					if bytes.Equal(tx.To, []byte(STAKE)) {
-						validator := chain.Validator{
-							Address: tx.PubKey, // NOTE: досі не вирішив, чи я використовую hash або pub
-							Amount:  tx.Amount,
-						}
+			go n.bs.SaveBlock(&block)
 
-						n.bs.AddValidator(&validator)
+			for _, tx := range block.Transactions {
+				if bytes.Equal(tx.To, []byte(STAKE)) {
+					validator := chain.Validator{
+						Address: tx.PubKey, // NOTE: досі не вирішив, чи я використовую hash або pub
+						Amount:  tx.Amount,
 					}
+
+					n.bs.AddValidator(&validator)
 				}
+			}
 
-				val, err := n.chooseValidator()
-				if err != nil {
-					log.Error().Err(err).Msg("помилка вибору наступного валідатора")
-					continue
-				}
-
-				// я це і є настпуний валідатор!
-				if bytes.Equal(val.Address, n.keys.Pub) {
-					newBlock := n.createNewBlock()
-
-					newBlockBytes, err := json.Marshal(newBlock)
-					if err != nil {
-						log.Fatal().Err(err).Msg("помилка розпаковки нового блоку")
-					}
-
-					blockProposalMsg := Message{
-						Type:      MsgBlockProposal,
-						Timestamp: time.Now().UnixMilli(),
-						Data:      newBlockBytes,
-						Pub:       n.keys.Pub,
-					}
-
-					err = blockProposalMsg.sign(n.keys.Priv)
-					if err != nil {
-						log.Fatal().Err(err).Msg("помилка підпису нового блоку")
-					}
-
-					go n.topic.broadcast(&blockProposalMsg, n.ctx)
-
-					n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
-				}
+			val, err := n.chooseValidator()
+			if err != nil {
+				log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 				continue
 			}
-			log.Warn().Msg("блок не є валідним")
+
+			// я це і є настпуний валідатор!
+			if bytes.Equal(val.Address, n.keys.Pub) {
+				newBlock := n.createNewBlock()
+
+				newBlockBytes, err := json.Marshal(newBlock)
+				if err != nil {
+					log.Fatal().Err(err).Msg("помилка розпаковки нового блоку")
+				}
+
+				blockProposalMsg := Message{
+					Type:      MsgBlockProposal,
+					Timestamp: time.Now().UnixMilli(),
+					Data:      newBlockBytes,
+					Pub:       n.keys.Pub,
+				}
+
+				err = blockProposalMsg.sign(n.keys.Priv)
+				if err != nil {
+					log.Fatal().Err(err).Msg("помилка підпису нового блоку")
+				}
+
+				go n.topic.broadcast(&blockProposalMsg, n.ctx)
+
+				n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
+			}
+			continue
 		}
 
 		latency := time.Now().UnixMilli() - message.Timestamp

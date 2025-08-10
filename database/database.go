@@ -5,8 +5,8 @@ package database
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/PQlite/core/chain"
 	"github.com/dgraph-io/badger/v4"
@@ -72,44 +72,57 @@ func (bs *BlockStorage) GetBlock(height uint32) (*chain.Block, error) {
 }
 
 func (bs *BlockStorage) GetLastBlock() (*chain.Block, error) {
-	var lastBlock chain.Block
+	var lastBlock *chain.Block
+	var maxBlockNumber int64 = -1
+
 	err := bs.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.Reverse = true // Ітеруємо у зворотному порядку
+		opts.Prefix = []byte("block:")
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		prefix := []byte("block:")
-		// Шукаємо до останнього можливого ключа з префіксом block:
-		it.Seek(append(prefix, 0xFF))
-
-		for it.ValidForPrefix(prefix) {
+		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
+			key := item.Key()
+			keyStr := string(key)
+
+			numStr := strings.TrimPrefix(keyStr, "block:")
+			blockNumber, err := strconv.ParseInt(numStr, 10, 64)
+			if err != nil {
+				continue
+			}
+
+			if blockNumber > maxBlockNumber {
+				maxBlockNumber = blockNumber
+			}
+		}
+
+		if maxBlockNumber != -1 {
+			keyToFetch := []byte("block:" + strconv.FormatInt(maxBlockNumber, 10))
+			item, err := txn.Get(keyToFetch)
+			if err != nil {
+				return err
+			}
+
 			return item.Value(func(val []byte) error {
-				return json.Unmarshal(val, &lastBlock)
+				var block chain.Block
+				if err := json.Unmarshal(val, &block); err != nil {
+					return err
+				}
+				lastBlock = &block
+				return nil
 			})
 		}
 
-		return fmt.Errorf("no blocks found")
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &lastBlock, nil
-}
 
-func checkDBExists(dbPath string) bool {
-	// Перевіряємо наявність MANIFEST файлу BadgerDB
-	manifestPath := filepath.Join(dbPath, "MANIFEST")
-	if _, err := os.Stat(manifestPath); err == nil {
-		return true
+	if lastBlock == nil {
+		return nil, fmt.Errorf("no blocks found")
 	}
 
-	// Або перевіряємо чи директорія не пуста
-	entries, err := os.ReadDir(dbPath)
-	if err != nil {
-		return false
-	}
-
-	return len(entries) > 0
+	return lastBlock, nil
 }

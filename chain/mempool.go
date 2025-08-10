@@ -39,5 +39,7 @@ func (m *Mempool) Add(tx *Transaction) error {
 
 func (m *Mempool) Len() int {
 	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	return len(m.TXs)
 }

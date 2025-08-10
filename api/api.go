@@ -68,7 +68,7 @@ func (s *Server) setupRoutes() {
 
 // handleGetStatus обробляє запит статусу.
 func (s *Server) handleGetStatus(c *fiber.Ctx) error {
-	// TODO: треба переписати відповіді, тому що зараз я повертаю код і стату. в цьому не має сенсу
+	// TODO: треба переписати відповіді, тому що зараз я повертаю код і статус. в цьому не має сенсу
 	return c.Status(200).JSON(fiber.Map{
 		"status": "ok",
 		"error":  "",

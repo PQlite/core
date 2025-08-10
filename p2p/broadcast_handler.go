@@ -50,7 +50,7 @@ func (n *Node) handleBroadcastMessages() {
 			if err != nil {
 				log.Warn().Err(err).Msg("отрмана транзакція не була додана до mempool")
 			}
-		case MsgBlockProposal: // FIXME: тут щось дуже дивне відбуваєтся. воно або створює два блоки за раз, або не правельно записує Height блоку
+		case MsgBlockProposal:
 			var block chain.Block
 			err = json.Unmarshal(message.Data, &block)
 			if err != nil {
@@ -80,7 +80,6 @@ func (n *Node) handleBroadcastMessages() {
 				log.Error().Uint32("висота отриманого блоку: ", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
 				return
 			}
-
 			n.bs.SaveBlock(&block)
 
 			for _, tx := range block.Transactions {
@@ -125,8 +124,6 @@ func (n *Node) handleBroadcastMessages() {
 				if err != nil {
 					log.Error().Err(err).Msg("помилка трансляції нового блоку")
 				}
-
-				n.bs.SaveBlock(&newBlock) // NOTE: треба буде переробити, якщо я хочу робити Vote
 			}
 			continue
 		}

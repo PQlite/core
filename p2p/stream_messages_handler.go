@@ -13,7 +13,10 @@ import (
 )
 
 func (n *Node) handleStreamMessages(stream network.Stream) {
+	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
+
 	log.Info().Str("from", stream.Conn().RemoteMultiaddr().String()).Msg("Отримано новий прямий потік")
+
 	defer func() {
 		// stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
 		//                         я дізнався що це щось страшне
@@ -108,6 +111,9 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 			if err != nil {
 				log.Fatal().Err(err).Msg("помилка запису в потік")
 			}
+			if err = writer.Flush(); err != nil {
+				log.Err(err).Msg("помилка відправки повідомлення")
+			}
 		}
 	}
 }
@@ -150,4 +156,3 @@ func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, er
 
 	return &respMsg, nil
 }
-

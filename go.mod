@@ -3,7 +3,7 @@ module github.com/PQlite/core
 go 1.24.5
 
 require (
-	github.com/PQlite/crypto v0.0.5-0.20250720122300-266869b5900f
+	github.com/PQlite/crypto v0.0.5-0.20250811135158-fe30486303dc
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/libp2p/go-libp2p v0.43.0

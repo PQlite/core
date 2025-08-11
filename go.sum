@@ -10,6 +10,8 @@ git.apache.org/thrift.git v0.0.0-20180902110319-2566ecd5d999/go.mod h1:fPE2ZNJGy
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/PQlite/crypto v0.0.5-0.20250720122300-266869b5900f h1:oZ7u29T1DjYHFbEhOgC+djglIxJIJ5kiNlt5+v0pYPg=
 github.com/PQlite/crypto v0.0.5-0.20250720122300-266869b5900f/go.mod h1:AZVpxUwn8QmYXedXT9J1JaLmXvCqrklotNLG8uzBcqI=
+github.com/PQlite/crypto v0.0.5-0.20250811135158-fe30486303dc h1:32xJWqaBetKiQDixuULLW46XA/JAnu2yxRuxatlJci0=
+github.com/PQlite/crypto v0.0.5-0.20250811135158-fe30486303dc/go.mod h1:AZVpxUwn8QmYXedXT9J1JaLmXvCqrklotNLG8uzBcqI=
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
 github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239/go.mod h1:2FmKhYUyUczH0OGQWaF5ceTx0UBShxjsH6f8oGKYe2c=

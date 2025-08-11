@@ -74,3 +74,8 @@ func (n *Node) addRewardTx(b *chain.BlockForSign) {
 
 	b.Transactions = append(b.Transactions, &tx)
 }
+
+func (n *Node) processNewBlock() {
+}
+
+// TODO: написати це, щоб не було повтору в node.go і sync.go

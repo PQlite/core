@@ -37,6 +37,8 @@ func (n *Node) createNewBlock() chain.Block {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	log.Info().Int("mempool", n.mempool.Len()).Msg("кількість транзакцій в mempool")
+
 	ublock := chain.BlockForSign{
 		Height:       lastBlock.Height + 1,
 		Timestamp:    time.Now().UnixMilli(),

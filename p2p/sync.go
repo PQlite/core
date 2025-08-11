@@ -125,6 +125,3 @@ func (n *Node) chooseRandomPeer() *peer.ID {
 	}
 	return nil
 }
-
-// func (n *Node) processNewBlock() {}
-// TODO: написати це, щоб не було повтору в node.go і sync.go

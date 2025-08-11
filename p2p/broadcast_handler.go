@@ -15,6 +15,7 @@ func (n *Node) handleBroadcastMessages() {
 		msg, err := n.topic.sub.Next(n.ctx)
 		if err != nil {
 			log.Error().Err(err).Msg("помилка при отриманні повідомлення")
+			continue
 		}
 
 		var message Message
@@ -46,8 +47,9 @@ func (n *Node) handleBroadcastMessages() {
 				continue
 			}
 
-			err = n.mempool.Add(&tx)
-			if err != nil {
+			log.Info().Int64("latency", time.Now().UnixMilli()-tx.Timestamp).Msg("отримано транзакцію")
+
+			if err = n.mempool.Add(&tx); err != nil {
 				log.Warn().Err(err).Msg("отрмана транзакція не була додана до mempool")
 			}
 
@@ -58,7 +60,7 @@ func (n *Node) handleBroadcastMessages() {
 				log.Error().Err(err).Msg("помилка розпаковки blockProposal")
 				continue
 			}
-			log.Info().Uint32("height", block.Height).Msg("отримано новий блок")
+			log.Info().Uint32("height", block.Height).Int64("latency ms", time.Now().UnixMilli()-block.Timestamp).Msg("отримано новий блок")
 
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
@@ -70,15 +72,15 @@ func (n *Node) handleBroadcastMessages() {
 			// Перевірка блоку
 			if err = block.Verify(); err != nil {
 				log.Err(err).Msg("помилка перевірки блоку")
-				return
+				continue
 			}
 			if err = block.VerifyTransactions(); err != nil {
 				log.Err(err).Msg("транзакції блоку не є валідними")
-				return
+				continue
 			}
 			if lastLocalBlock.Height+1 != block.Height {
 				log.Error().Uint32("висота отриманого блоку: ", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
-				return
+				continue
 			}
 
 			n.bs.SaveBlock(&block)
@@ -133,10 +135,6 @@ func (n *Node) handleBroadcastMessages() {
 					log.Error().Err(err).Msg("помилка трансляції нового блоку")
 				}
 			}
-			continue
 		}
-
-		latency := time.Now().UnixMilli() - message.Timestamp
-		log.Info().Int64("latency", latency).Msg("oтримано")
 	}
 }

@@ -3,6 +3,7 @@
 package api
 
 import (
+	"sort"
 	"strconv"
 	"time"
 
@@ -106,6 +107,12 @@ func (s *Server) handleGetAllBlocks(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
+
+	// сортувати по зростанню номера блока
+	sort.Slice(blocks, func(i int, j int) bool {
+		return blocks[i].Height < blocks[j].Height
+	})
+
 	return c.JSON(blocks)
 }
 

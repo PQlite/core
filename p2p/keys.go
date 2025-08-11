@@ -61,11 +61,19 @@ func LoadKeys() (*Keys, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = save(priv, pub)
+		binPriv, err := priv.MarshalBinary()
 		if err != nil {
 			return nil, err
 		}
-		return &Keys{Priv: priv, Pub: pub}, nil
+		binPub, err := pub.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		err = save(binPriv, binPub)
+		if err != nil {
+			return nil, err
+		}
+		return &Keys{Priv: binPriv, Pub: binPub}, nil
 	}
 }
 

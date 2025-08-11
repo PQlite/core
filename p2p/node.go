@@ -102,12 +102,12 @@ func (n *Node) Start() {
 	n.connectingToBootstrap()
 	go n.peerDiscovery()
 
-	n.syncBlockchain()
-
 	// Handlers
 	go n.handleBroadcastMessages()
 	go n.handleTxCh()
 	go n.host.SetStreamHandler(directProtocol, n.handleStreamMessages)
+
+	n.syncBlockchain()
 
 	<-n.ctx.Done()
 	log.Info().Msg("отримано команду зупинки в Node")

@@ -5,6 +5,7 @@ package chain
 import (
 	"bytes"
 	"errors"
+	"slices"
 	"sync"
 )
 
@@ -42,4 +43,15 @@ func (m *Mempool) Len() int {
 	defer m.mu.Unlock()
 
 	return len(m.TXs)
+}
+
+func (m *Mempool) DeleteIfExist(tx *Transaction) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if i := slices.Index(m.TXs, tx); i != -1 {
+		m.TXs = slices.Delete(m.TXs, i, i+1)
+		return true
+	}
+	return false
 }

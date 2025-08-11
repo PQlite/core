@@ -3,7 +3,7 @@ module github.com/PQlite/core
 go 1.24.5
 
 require (
-	github.com/PQlite/crypto v0.0.5-0.20250720125105-e064837ce1c1
+	github.com/PQlite/crypto v0.0.5-0.20250811135158-fe30486303dc
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/libp2p/go-libp2p v0.43.0
@@ -17,7 +17,6 @@ require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect

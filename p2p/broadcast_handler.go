@@ -38,7 +38,7 @@ func (n *Node) handleBroadcastMessages() {
 			continue
 		}
 
-		switch message.Type {
+		switch message.Type { // NOTE: думаю, що треба зробити функцію для кожного випадка і обробляти її типу: go handleMsgNewTransaction(), тому що коли буде багато вхідних повідомлень, воно може їх просто пропускати
 		case MsgNewTransaction:
 			var tx chain.Transaction
 			err = json.Unmarshal(message.Data, &tx)
@@ -111,29 +111,31 @@ func (n *Node) handleBroadcastMessages() {
 
 			// я це і є настпуний валідатор!
 			if bytes.Equal(val.Address, n.keys.Pub) {
-				newBlock := n.createNewBlock()
+				go func() {
+					newBlock := n.createNewBlock()
 
-				newBlockBytes, err := json.Marshal(newBlock)
-				if err != nil {
-					log.Fatal().Err(err).Msg("помилка розпаковки нового блоку")
-				}
+					newBlockBytes, err := json.Marshal(newBlock)
+					if err != nil {
+						log.Fatal().Err(err).Msg("помилка розпаковки нового блоку")
+					}
 
-				blockProposalMsg := Message{
-					Type:      MsgBlockProposal,
-					Timestamp: time.Now().UnixMilli(),
-					Data:      newBlockBytes,
-					Pub:       n.keys.Pub,
-				}
+					blockProposalMsg := Message{
+						Type:      MsgBlockProposal,
+						Timestamp: time.Now().UnixMilli(),
+						Data:      newBlockBytes,
+						Pub:       n.keys.Pub,
+					}
 
-				err = blockProposalMsg.sign(n.keys.Priv)
-				if err != nil {
-					log.Fatal().Err(err).Msg("помилка підпису нового блоку")
-				}
+					err = blockProposalMsg.sign(n.keys.Priv)
+					if err != nil {
+						log.Fatal().Err(err).Msg("помилка підпису нового блоку")
+					}
 
-				err = n.topic.broadcast(&blockProposalMsg, n.ctx)
-				if err != nil {
-					log.Error().Err(err).Msg("помилка трансляції нового блоку")
-				}
+					err = n.topic.broadcast(&blockProposalMsg, n.ctx)
+					if err != nil {
+						log.Error().Err(err).Msg("помилка трансляції нового блоку")
+					}
+				}()
 			}
 		}
 	}

@@ -50,6 +50,7 @@ func (n *Node) handleBroadcastMessages() {
 			if err != nil {
 				log.Warn().Err(err).Msg("отрмана транзакція не була додана до mempool")
 			}
+
 		case MsgBlockProposal:
 			var block chain.Block
 			err = json.Unmarshal(message.Data, &block)
@@ -61,7 +62,6 @@ func (n *Node) handleBroadcastMessages() {
 
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
-			// TODO: видалити транзакції з mempool, якщо вони вже є в блоці
 			lastLocalBlock, err := n.bs.GetLastBlock()
 			if err != nil {
 				log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
@@ -80,7 +80,15 @@ func (n *Node) handleBroadcastMessages() {
 				log.Error().Uint32("висота отриманого блоку: ", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
 				return
 			}
+
 			n.bs.SaveBlock(&block)
+
+			// видалити транзакції з mempool, якщо вони є в блоці
+			go func() {
+				for _, tx := range block.Transactions {
+					n.mempool.DeleteIfExist(tx)
+				}
+			}()
 
 			for _, tx := range block.Transactions {
 				if bytes.Equal(tx.To, []byte(STAKE)) {

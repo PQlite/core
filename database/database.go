@@ -10,6 +10,7 @@ import (
 
 	"github.com/PQlite/core/chain"
 	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 )
 
 type BlockStorage struct {
@@ -17,7 +18,9 @@ type BlockStorage struct {
 }
 
 func InitDB() (*BlockStorage, error) {
-	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
+	opts := badger.DefaultOptions("/tmp/badger")
+	opts.Compression = options.Snappy
+	db, err := badger.Open(opts)
 	bs := &BlockStorage{db: db}
 	if err != nil {
 		return nil, err
@@ -152,7 +155,6 @@ func (bs *BlockStorage) GetAllBlocks() ([]*chain.Block, error) {
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}

@@ -60,7 +60,7 @@ func (n *Node) handleBroadcastMessages() {
 				log.Error().Err(err).Msg("помилка розпаковки blockProposal")
 				continue
 			}
-			log.Info().Uint32("height", block.Height).Int64("latency ms", time.Now().UnixMilli()-block.Timestamp).Msg("отримано новий блок")
+			log.Info().Uint32("height", block.Height).Int64("latency", time.Now().UnixMilli()-block.Timestamp).Msg("отримано новий блок")
 
 			// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
 			// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив

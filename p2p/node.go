@@ -29,6 +29,7 @@ type Node struct {
 	kdht         *dht.IpfsDHT
 	keys         *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
 	nextProposer chain.Validator
+	vote         chain.VoteCh
 }
 
 func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStorage) (Node, error) {

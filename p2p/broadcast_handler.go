@@ -78,8 +78,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	}
 	log.Info().Uint32("height", block.Height).Int64("latency", time.Now().UnixMilli()-block.Timestamp).Msg("отримано новий блок")
 
-	// NOTE: я ще не впевнений в MsgVote, тому що, якщо я перевірив блок, і він правельний, то це означає, що усі за нього проголосують
-	// TODO: додати перевірку автора ( щоб pubkey збігався з тим, хто повинен був робити блок ). І нагороду, яку він собі назначив
+	// TODO: додати перевірку нагороди, яку він собі назначив
 	lastLocalBlock, err := n.bs.GetLastBlock()
 	if err != nil {
 		log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
@@ -90,13 +89,19 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		log.Err(err).Msg("помилка перевірки блоку")
 		return
 	}
+	// перевірка усіх транзакцій в блоці
 	if err = block.VerifyTransactions(); err != nil {
 		log.Err(err).Msg("транзакції блоку не є валідними")
 		return
 	}
+	// чи правельна висота блоку який був отриманий (на один більше попереднього)
 	if lastLocalBlock.Height+1 != block.Height {
 		log.Error().Uint32("висота отриманого блоку: ", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
 		return
+	}
+	// Чи правельний творець блоку
+	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
+		log.Error().Hex("адреса творця блоку", block.Proposer).Hex("адреса валідатора, який поминен робити блок", n.nextProposer.Address).Msg("адреса творця блоку і того хто повинен його робити не збігаются")
 	}
 
 	bytesBlock, err := json.Marshal(block)

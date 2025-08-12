@@ -4,7 +4,6 @@ package chain
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/PQlite/crypto"
 	"github.com/rs/zerolog/log"
@@ -55,14 +54,9 @@ func (t *Transaction) Verify() error {
 		return err
 	}
 
-	res, err := crypto.Verify(t.PubKey, data, t.Signature)
-	if err != nil {
+	if err = crypto.Verify(t.PubKey, data, t.Signature); err != nil {
 		return err
 	}
-	if !res {
-		return fmt.Errorf("not valid")
-	}
-
 	return nil
 }
 

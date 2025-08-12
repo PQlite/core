@@ -30,6 +30,7 @@ const (
 	MsgDeleteValidator MessageType = "deleteValidator" // NOTE: це треба, щоб видаляти валідатора зі списку, якщо він не зробив блок/вимкнувся
 )
 
+// NOTE: можливо треба розділити на окремі структури, взалежності від контенту
 type Message struct {
 	Type      MessageType `json:"type"` // Тип повідомлення
 	Timestamp int64       `json:"timestamp"`
@@ -69,9 +70,8 @@ func (m *Message) verify() bool {
 		return false
 	}
 
-	res, err := crypto.Verify(m.Pub, binUm, m.Signature)
-	if err != nil {
+	if err = crypto.Verify(m.Pub, binUm, m.Signature); err != nil {
 		return false
 	}
-	return res
+	return true
 }

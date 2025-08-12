@@ -226,7 +226,8 @@ func (n *Node) handleMsgCommit(data []byte) {
 	//
 	// }
 
-	go n.bs.SaveBlock(&commit.Block)
+	n.bs.SaveBlock(&commit.Block)
+	log.Info().Hex("block hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("додано новий блок до лонцюжка")
 
 	// видалити транзакції з mempool, якщо вони є в блоці
 	go func() {

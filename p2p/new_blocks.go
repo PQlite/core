@@ -39,7 +39,7 @@ func (n *Node) createNewBlock() chain.Block {
 
 	log.Info().Int("mempool", n.mempool.Len()).Msg("кількість транзакцій в mempool")
 
-	ublock := chain.BlockForSign{
+	block := chain.Block{
 		Height:       lastBlock.Height + 1,
 		Timestamp:    time.Now().UnixMilli(),
 		PrevHash:     lastBlock.Hash,
@@ -47,19 +47,20 @@ func (n *Node) createNewBlock() chain.Block {
 		Transactions: n.mempool.TXs,
 	}
 
-	n.addRewardTx(&ublock)
+	n.addRewardTx(&block)
 
-	block, err := ublock.Sign(n.keys.Priv)
-	if err != nil {
+	if err = block.Sign(n.keys.Priv); err != nil {
 		log.Fatal().Err(err).Msg("помилка підпису блоку")
 	}
+
+	block.GenerateHash()
 
 	n.mempool.TXs = nil // очищення TXs
 
 	return block
 }
 
-func (n *Node) addRewardTx(b *chain.BlockForSign) {
+func (n *Node) addRewardTx(b *chain.Block) {
 	tx := chain.Transaction{
 		From:      []byte(REWARDWALLET),
 		To:        b.Proposer,

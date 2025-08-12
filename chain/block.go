@@ -43,12 +43,20 @@ func (b *Block) Sign(binPriv []byte) error {
 		return err
 	}
 
-	// TODO: винести в окрему функцію
-	// NOTE: створюєтся без signature, тому в ньому просто не має сенсу
-	blockHash := sha3.Sum224(BlockForSignBytes)
+	b.Signature = sig
+
+	return nil
+}
+
+func (b *Block) GenerateHash() error {
+	blockBytes, err := b.MarshalDeterministic()
+	if err != nil {
+		return err
+	}
+
+	blockHash := sha3.Sum224(blockBytes)
 
 	b.Hash = blockHash[:]
-	b.Signature = sig
 
 	return nil
 }

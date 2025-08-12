@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/PQlite/core/chain"
+	"github.com/PQlite/crypto"
 	"github.com/rs/zerolog/log"
 )
 
@@ -45,6 +46,10 @@ func (n *Node) handleBroadcastMessages() {
 			go n.handleMsgNewTransaction(message.Data)
 		case MsgBlockProposal:
 			go n.handleMsgBlockProposal(message.Data)
+		case MsgVote:
+			go n.handleMsgVote()
+		case MsgCommit:
+			go n.handleMsgCommit()
 		}
 	}
 }
@@ -94,6 +99,32 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		return
 	}
 
+	bytesBlock, err := json.Marshal(block)
+	if err != nil {
+		panic(err)
+	}
+
+	sig, err := crypto.Sign(n.keys.Priv, bytesBlock)
+	if err != nil {
+		panic(err)
+	}
+
+	msg := Message{
+		Type:      MsgVote,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      sig,
+		Pub:       n.keys.Pub,
+	}
+
+	if err = msg.sign(n.keys.Priv); err != nil {
+		panic(err)
+	}
+
+	if err = n.topic.broadcast(&msg, n.ctx); err != nil {
+		panic(err)
+	}
+
+	// TODO: перенести в handleMsgCommit
 	n.bs.SaveBlock(&block)
 
 	// видалити транзакції з mempool, якщо вони є в блоці
@@ -119,8 +150,10 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 		return
 	}
+	/////////////////////////////////////////////////////////////
 
-	// я це і є настпуний валідатор!
+	// TODO: це повинно бути в handleMsgCommit
+	// я і є настпуний валідатор!
 	if bytes.Equal(val.Address, n.keys.Pub) {
 		newBlock := n.createNewBlock()
 
@@ -146,4 +179,11 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 			log.Error().Err(err).Msg("помилка трансляції нового блоку")
 		}
 	}
+	/////////////////////////////////////////////////////////////
+}
+
+func (n *Node) handleMsgVote() {
+}
+
+func (n *Node) handleMsgCommit() {
 }

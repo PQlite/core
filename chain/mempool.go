@@ -45,6 +45,7 @@ func (m *Mempool) Len() int {
 	return len(m.TXs)
 }
 
+// DeleteIfExist FIXME: не працює, просто не видаляє транзакції. треба зробити порівняння по signature
 func (m *Mempool) DeleteIfExist(tx *Transaction) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

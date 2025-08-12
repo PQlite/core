@@ -3,6 +3,7 @@ package p2p
 import (
 	"encoding/json"
 
+	"github.com/PQlite/core/chain"
 	"github.com/PQlite/crypto"
 )
 
@@ -34,9 +35,15 @@ const (
 type Message struct {
 	Type      MessageType `json:"type"` // Тип повідомлення
 	Timestamp int64       `json:"timestamp"`
-	Data      []byte      `json:"data"`      // дані через json.Marshal
+	Data      []byte      `json:"data"`      // дані через json.Marshal // NOTE: можливо треба замінити на структуру, якщо так можна, тому що там завжди структури
 	Pub       []byte      `json:"pub"`       // публічний коюч відправника, для перевірки
 	Signature []byte      `json:"signature"` // підпис відправника
+}
+
+// OPTIMIZE: треба видалити, тому що відправка блока 2 рази це не дуже ефективно
+type Commit struct {
+	Voters []chain.Vote `json:"voters"`
+	Block  chain.Block  `json:"block"`
 }
 
 func (m *Message) sign(priv []byte) error {

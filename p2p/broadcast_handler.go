@@ -47,9 +47,9 @@ func (n *Node) handleBroadcastMessages() {
 		case MsgBlockProposal:
 			go n.handleMsgBlockProposal(message.Data)
 		case MsgVote:
-			go n.handleMsgVote()
+			go n.handleMsgVote(message.Data)
 		case MsgCommit:
-			go n.handleMsgCommit()
+			go n.handleMsgCommit(message.Data)
 		}
 	}
 }
@@ -104,7 +104,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		log.Error().Hex("адреса творця блоку", block.Proposer).Hex("адреса валідатора, який поминен робити блок", n.nextProposer.Address).Msg("адреса творця блоку і того хто повинен його робити не збігаются")
 	}
 
-	bytesBlock, err := json.Marshal(block)
+	bytesBlock, err := block.MarshalDeterministic()
 	if err != nil {
 		panic(err)
 	}
@@ -114,10 +114,20 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		panic(err)
 	}
 
+	vote := chain.Vote{
+		Pub:       n.keys.Pub,
+		Signature: sig,
+	}
+
+	voteBytes, err := json.Marshal(vote)
+	if err != nil {
+		panic(err)
+	}
+
 	msg := Message{
 		Type:      MsgVote,
 		Timestamp: time.Now().UnixMilli(),
-		Data:      sig,
+		Data:      voteBytes,
 		Pub:       n.keys.Pub,
 	}
 
@@ -129,17 +139,103 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		panic(err)
 	}
 
-	// TODO: перенести в handleMsgCommit
-	n.bs.SaveBlock(&block)
+	// OPTIMIZE: я думаю зробити список, в якому будуть ставитись галочки чи щось таке
+	// TODO: додати обробку сценарію, коли не проголосували в достатній кількості
+	var votersList []chain.Vote
+	allValidators, err := n.bs.GetValidatorsList()
+	if err != nil {
+		panic(err)
+	}
+
+	var accceptedAmount float32
+	var stakeAmount float32
+	for _, validator := range *allValidators {
+		stakeAmount += validator.Amount
+	}
+
+	for {
+		v := <-n.vote
+		if err = crypto.Verify(v.Pub, bytesBlock, v.Signature); err != nil {
+			log.Info().Msg("голос не є вілідним")
+			continue
+		}
+
+		votersList = append(votersList, v)
+
+		for _, validator := range *allValidators {
+			if bytes.Equal(v.Pub, validator.Address) {
+				accceptedAmount += validator.Amount
+			}
+		}
+
+		if (stakeAmount / 2) < accceptedAmount { // 50%
+			break
+		}
+	}
+
+	commit := Commit{
+		Voters: votersList,
+		Block:  block,
+	}
+
+	commitBytes, err := json.Marshal(commit)
+	if err != nil {
+		panic(err)
+	}
+
+	commitMsg := Message{
+		Type:      MsgCommit,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      commitBytes,
+		Pub:       n.keys.Pub,
+	}
+	if err = commitMsg.sign(n.keys.Priv); err != nil {
+		panic(err)
+	}
+
+	if err = n.topic.broadcast(&commitMsg, n.ctx); err != nil {
+		panic(err)
+	}
+}
+
+func (n *Node) handleMsgVote(data []byte) {
+	var vote chain.Vote
+	if err := json.Unmarshal(data, &vote); err != nil {
+		panic(err)
+	}
+	n.vote <- vote
+	log.Info().Msg("відправлено в канал n.vote")
+}
+
+func (n *Node) handleMsgCommit(data []byte) {
+	go drainChannel(n.vote)
+
+	var commit Commit
+	if err := json.Unmarshal(data, &commit); err != nil {
+		panic(err)
+	}
+
+	// TODO: перевірити дані з commit
+
+	// allValidators, err := n.bs.GetValidatorsList()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// for _, v := range commit.Voters {
+	// 	v.
+	//
+	// }
+
+	go n.bs.SaveBlock(&commit.Block)
 
 	// видалити транзакції з mempool, якщо вони є в блоці
 	go func() {
-		for _, tx := range block.Transactions {
+		for _, tx := range commit.Block.Transactions {
 			n.mempool.DeleteIfExist(tx)
 		}
 	}()
 
-	for _, tx := range block.Transactions {
+	for _, tx := range commit.Block.Transactions {
 		if bytes.Equal(tx.To, []byte(STAKE)) {
 			validator := chain.Validator{
 				Address: tx.PubKey, // NOTE: досі не вирішив, чи я використовую hash або pub
@@ -155,9 +251,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 		return
 	}
-	/////////////////////////////////////////////////////////////
 
-	// TODO: це повинно бути в handleMsgCommit
 	// я і є настпуний валідатор!
 	if bytes.Equal(val.Address, n.keys.Pub) {
 		newBlock := n.createNewBlock()
@@ -184,11 +278,16 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 			log.Error().Err(err).Msg("помилка трансляції нового блоку")
 		}
 	}
-	/////////////////////////////////////////////////////////////
 }
 
-func (n *Node) handleMsgVote() {
-}
-
-func (n *Node) handleMsgCommit() {
+func drainChannel[T any](ch chan T) {
+	for {
+		select {
+		case <-ch:
+			// просто читаємо і відкидаємо значення
+		default:
+			// канал порожній - виходимо
+			return
+		}
+	}
 }

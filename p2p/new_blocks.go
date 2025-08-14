@@ -55,8 +55,6 @@ func (n *Node) createNewBlock() chain.Block {
 
 	block.GenerateHash()
 
-	n.mempool.TXs = nil // очищення TXs
-
 	return block
 }
 

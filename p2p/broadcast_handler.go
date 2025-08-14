@@ -212,8 +212,8 @@ func (n *Node) handleMsgVote(data []byte) {
 	if err := json.Unmarshal(data, &vote); err != nil {
 		panic(err)
 	}
+	log.Debug().Hex("від", vote.Pub).Msg("отримано повідомлення  vote")
 	n.vote <- vote
-	log.Debug().Int("vote", len(n.vote)).Msg("кількість елементів в n.vote")
 }
 
 func (n *Node) handleMsgCommit(data []byte) {

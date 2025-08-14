@@ -5,7 +5,6 @@ package chain
 import (
 	"bytes"
 	"errors"
-	"slices"
 	"sync"
 )
 
@@ -46,13 +45,26 @@ func (m *Mempool) Len() int {
 }
 
 // DeleteIfExist FIXME: не працює, просто не видаляє транзакції. треба зробити порівняння по signature
+//
+//	func (m *Mempool) DeleteIfExist(tx *Transaction) bool {
+//		m.mu.Lock()
+//		defer m.mu.Unlock()
+//
+//		if i := slices.Index(m.TXs, tx); i != -1 {
+//			m.TXs = slices.Delete(m.TXs, i, i+1)
+//			return true
+//		}
+//		return false
+//	}
 func (m *Mempool) DeleteIfExist(tx *Transaction) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if i := slices.Index(m.TXs, tx); i != -1 {
-		m.TXs = slices.Delete(m.TXs, i, i+1)
-		return true
+	for index, localTX := range m.TXs {
+		if bytes.Equal(localTX.Signature, tx.Signature) {
+			m.TXs = append(m.TXs[:index], m.TXs[index+1:]...) // видалити зі слайсу
+			return true
+		}
 	}
 	return false
 }

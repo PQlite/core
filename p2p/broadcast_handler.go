@@ -29,7 +29,7 @@ func (n *Node) handleBroadcastMessages() {
 		}
 
 		if msg.ReceivedFrom == n.host.ID() {
-			if message.Type != MsgBlockProposal {
+			if message.Type != MsgBlockProposal && message.Type != MsgCommit && message.Type != MsgVote {
 				log.Debug().Msg("повідомлення від себе")
 				continue
 			}
@@ -40,6 +40,8 @@ func (n *Node) handleBroadcastMessages() {
 			log.Warn().Msg("підпис повідомлення not valid")
 			continue
 		}
+
+		log.Info().Str("отримав мовідомлення", string(message.Type))
 
 		switch message.Type {
 		case MsgNewTransaction:
@@ -102,6 +104,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	// Чи правельний творець блоку
 	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
 		log.Error().Hex("адреса творця блоку", block.Proposer).Hex("адреса валідатора, який поминен робити блок", n.nextProposer.Address).Msg("адреса творця блоку і того хто повинен його робити не збігаются")
+		return
 	}
 
 	bytesBlock, err := block.MarshalDeterministic()
@@ -204,7 +207,7 @@ func (n *Node) handleMsgVote(data []byte) {
 		panic(err)
 	}
 	n.vote <- vote
-	log.Info().Msg("відправлено в канал n.vote")
+	log.Debug().Int("vote", len(n.vote)).Msg("кількість елементів в n.vote")
 }
 
 func (n *Node) handleMsgCommit(data []byte) {

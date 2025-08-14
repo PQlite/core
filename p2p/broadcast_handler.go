@@ -199,6 +199,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	if err = n.topic.broadcast(&commitMsg, n.ctx); err != nil {
 		panic(err)
 	}
+	log.Debug().Msg("повідомлення commit відправлено")
 }
 
 func (n *Node) handleMsgVote(data []byte) {

@@ -142,6 +142,11 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		panic(err)
 	}
 
+	// якщо це не я роблю блок
+	if !bytes.Equal(block.Proposer, n.keys.Pub) {
+		return
+	}
+
 	// OPTIMIZE: я думаю зробити список, в якому будуть ставитись галочки чи щось таке
 	// TODO: додати обробку сценарію, коли не проголосували в достатній кількості
 	var votersList []chain.Vote

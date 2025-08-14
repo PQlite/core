@@ -86,14 +86,16 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 	}
 
 	return Node{
-		host:    node,
-		ctx:     ctx,
-		TxCh:    make(chan *chain.Transaction),
-		topic:   &topic,
-		mempool: mempool,
-		bs:      bs,
-		kdht:    kdht,
-		keys:    keys,
+		host:         node,
+		ctx:          ctx,
+		TxCh:         make(chan *chain.Transaction),
+		topic:        &topic,
+		mempool:      mempool,
+		bs:           bs,
+		kdht:         kdht,
+		keys:         keys,
+		nextProposer: chain.Validator{},
+		vote:         make(chan chain.Vote),
 	}, nil
 }
 

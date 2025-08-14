@@ -3,6 +3,7 @@
 package api
 
 import (
+	"net"
 	"sort"
 	"strconv"
 	"time"
@@ -65,6 +66,16 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/txs", s.handleGetMempoolLen)
 	s.app.Get("/blocks", s.handleGetAllBlocks)
 	s.app.Post("/tx", s.handlePostTx)
+
+	// щоб сервер не відповідав усіляким підораскам
+	s.app.Use(func(c *fiber.Ctx) error {
+		time.Sleep(100 * time.Second)
+		hijacker, ok := c.Context().Conn().(*net.TCPConn)
+		if ok {
+			_ = hijacker.Close()
+		}
+		return nil
+	})
 }
 
 // handleGetStatus обробляє запит статусу.

@@ -3,6 +3,7 @@ package chain
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"math"
 )
@@ -12,6 +13,7 @@ type Validator struct {
 	Amount  float32
 }
 
+// NOTE: можливо треба додати отримання останнього блоку, і списку валідаторів, тому що вони не завжди під рукою
 // SelectNextProposer deterministically selects the next proposer based on block hash
 func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, error) {
 	if len(validators) == 0 {
@@ -45,10 +47,12 @@ func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, e
 	for _, v := range validators {
 		current += v.Amount
 		if current >= target {
+			println(hex.EncodeToString(v.Address))
 			return &v, nil
 		}
 	}
 
+	println(1)
 	// Fallback to last validator in case of rounding errors
 	return &validators[len(validators)-1], nil
 }

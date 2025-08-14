@@ -98,7 +98,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	}
 	// чи правельна висота блоку який був отриманий (на один більше попереднього)
 	if lastLocalBlock.Height+1 != block.Height {
-		log.Error().Uint32("висота отриманого блоку: ", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
+		log.Error().Uint32("висота отриманого блоку", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
 		return
 	}
 	// Чи правельний творець блоку
@@ -255,6 +255,7 @@ func (n *Node) handleMsgCommit(data []byte) {
 		log.Error().Err(err).Msg("помилка вибору наступного валідатора")
 		return
 	}
+	n.nextProposer = val
 
 	// я і є настпуний валідатор!
 	if bytes.Equal(val.Address, n.keys.Pub) {

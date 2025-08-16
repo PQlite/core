@@ -20,6 +20,18 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("помилка initdb")
 	}
+
+	_, err = bs.GetLastBlock()
+	if err != nil {
+		if err.Error() == "no blocks found" {
+			log.Info().Msg("база даних порожня, початок створення genesis блоку")
+			b, val := chain.CreateGenesisBlock()
+			bs.SaveBlock(&b)
+			bs.AddValidator(&val)
+			log.Info().Msg("genesis блок створено")
+		}
+	}
+
 	mempool := chain.Mempool{}
 	ctx := context.Background()
 

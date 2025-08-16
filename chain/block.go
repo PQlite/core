@@ -6,6 +6,7 @@ package chain
 import (
 	"bytes"
 	"crypto/sha3"
+	"encoding/base64"
 	"encoding/json"
 	"sort"
 
@@ -110,4 +111,21 @@ func (b Block) MarshalDeterministic() ([]byte, error) {
 	}
 
 	return res, nil
+}
+
+func CreateGenesisBlock() (Block, Validator) {
+	genesisReceiverPubKeyBase64 := "jiiHWiJWyBn42vc8qNEdNY04hVysOnWl0Vx5Xb/mdGo="
+	pubBytes, err := base64.StdEncoding.DecodeString(genesisReceiverPubKeyBase64)
+	if err != nil {
+		panic(err)
+	}
+
+	b := Block{
+		Height: 0,
+	}
+	val := Validator{
+		Address: pubBytes,
+		Amount:  1,
+	}
+	return b, val
 }

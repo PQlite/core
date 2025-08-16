@@ -14,15 +14,12 @@ import (
 func (n *Node) syncBlockchain() {
 	// OPTIMIZE: зробити отримання нових блоків в btach
 	for {
-		var nextBlockHeight uint32
 		localBlockHeight, err := n.bs.GetLastBlock()
-		if err != nil || localBlockHeight == nil {
-			nextBlockHeight = 0
-		} else {
-			nextBlockHeight = localBlockHeight.Height + 1
+		if err != nil {
+			panic(err)
 		}
 
-		data, err := json.Marshal(chain.Block{Height: nextBlockHeight})
+		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
 		if err != nil {
 			log.Fatal().Err(err).Msg("помилка розпаковки блоку")
 		}
@@ -55,7 +52,7 @@ func (n *Node) syncBlockchain() {
 
 		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
 		// TODO: винести в окерму функцію
-		if respBlock.Height < nextBlockHeight {
+		if respBlock.Height < localBlockHeight.Height+1 {
 			log.Info().Msg("blockchain is up to date!")
 
 			if err := n.setNextProposer(); err != nil {
@@ -82,6 +79,7 @@ func (n *Node) syncBlockchain() {
 		if err := n.bs.SaveBlock(&respBlock); err != nil {
 			panic(err)
 		}
+		log.Info().Uint32("height", respBlock.Height).Int64("latency", time.Now().UnixMilli()-respMsg.Timestamp).Msg("блок отримано")
 
 		if err := n.addValidatorsToDB(&respBlock); err != nil {
 			panic(err)

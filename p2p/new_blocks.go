@@ -79,7 +79,7 @@ func (n *Node) addRewardTx(b *chain.Block) {
 
 func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	// Чи правельний творець блоку
-	if bytes.Equal(block.Proposer, n.nextProposer.Address) {
+	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
 		return fmt.Errorf("помилочка")
 	}
 	// чи правельна висота блоку який був отриманий (на один більше попереднього)

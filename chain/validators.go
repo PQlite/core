@@ -12,8 +12,8 @@ type Validator struct {
 	Amount  float32
 }
 
-// NOTE: можливо треба додати отримання останнього блоку, і списку валідаторів, тому що вони не завжди під рукою
 // SelectNextProposer deterministically selects the next proposer based on block hash
+// NOTE: можливо треба додати отримання останнього блоку, і списку валідаторів, тому що вони не завжди під рукою
 func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, error) {
 	if len(validators) == 0 {
 		return nil, errors.New("empty validators list")

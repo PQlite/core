@@ -96,7 +96,7 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	}
 	// Перевірка підпису і hash`у
 	if err := block.Verify(); err != nil {
-		log.Error().Err(err).Msg("валідація підпису блоку не пройшла")
+		log.Error().Err(err).Hex("proposer", block.Proposer).Msg("валідація підпису блоку не пройшла")
 		return fmt.Errorf("err")
 	}
 	// Перевірка підпису і балансів усіх транзакцій в тому чеслі перевірку нагороди для валідатора

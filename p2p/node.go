@@ -112,10 +112,6 @@ func (n *Node) Start() {
 
 	n.syncBlockchain()
 
-	if err := n.setNextProposer(); err != nil {
-		panic(err)
-	}
-
 	<-n.ctx.Done()
 	log.Info().Msg("отримано команду зупинки в Node")
 	n.host.Close()

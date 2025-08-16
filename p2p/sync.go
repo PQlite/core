@@ -54,61 +54,37 @@ func (n *Node) syncBlockchain() {
 		}
 
 		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
+		// TODO: винести в окерму функцію
 		if respBlock.Height < nextBlockHeight {
 			log.Info().Msg("blockchain is up to date!")
-			nextProposer, err := n.chooseValidator()
-			if err != nil {
-				log.Error().Err(err).Msg("помилка вибору наступного валідатора")
-				return
+
+			if err := n.setNextProposer(); err != nil {
+				panic(err)
 			}
-			n.nextProposer = nextProposer
 
-			if bytes.Equal(nextProposer.Address, n.keys.Pub) {
-				block := n.createNewBlock()
-
-				data, err := json.Marshal(block)
+			if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+				blockProposalMsg, err := n.getMsgBlockProposalMsg()
 				if err != nil {
-					log.Fatal().Err(err).Msg("помилка розпаковки блоку")
+					panic(err)
 				}
 
-				msg := Message{
-					Type:      MsgBlockProposal,
-					Timestamp: time.Now().UnixMilli(),
-					Data:      data,
-					Pub:       n.keys.Pub,
+				if err := n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
+					panic(err)
 				}
-				err = msg.sign(n.keys.Priv)
-				if err != nil {
-					log.Fatal().Err(err).Msg("помилка підпису повідомлення")
-				}
-
-				n.topic.broadcast(&msg, n.ctx)
-
 			}
 			return
 		}
-		// TODO: додати перевірку балансів, а не тільки підписів
-		if respBlock.Height == nextBlockHeight {
-			if respBlock.Verify() != nil || respBlock.VerifyTransactions() != nil {
-				log.Warn().Msg("отриманий блок/транзакції, не є валідним")
-				return // ISSUE: треба зробити вібір іншого вузла, або повтор
-			} else {
-				log.Info().Uint32("height", respBlock.Height).Int64("latency", time.Now().UnixMilli()-respMsg.Timestamp).Msg("блок отримано")
 
-				// TODO: додавати баланс до валідатора, а не просто перезаписувати
-				for _, tx := range respBlock.Transactions {
-					if bytes.Equal(tx.To, []byte(STAKE)) {
-						validator := chain.Validator{
-							Address: tx.PubKey,
-							Amount:  tx.Amount,
-						}
-						n.bs.AddValidator(&validator)
-						log.Info().Float32("amount", validator.Amount).Msg("додано валідатора")
-					}
-				}
+		if err := n.fullBlockVerefication(&respBlock); err != nil {
+			panic(err)
+		}
 
-				n.bs.SaveBlock(&respBlock)
-			}
+		if err := n.bs.SaveBlock(&respBlock); err != nil {
+			panic(err)
+		}
+
+		if err := n.addValidatorsToDB(&respBlock); err != nil {
+			panic(err)
 		}
 	}
 }

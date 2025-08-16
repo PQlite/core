@@ -1,5 +1,7 @@
 package p2p
 
+// TODO: зробити механізм відмови від блоку. коли блок не пройшов перевірку, треба щоб мережа не зупенялась, а вибрала іншого валідатора
+
 import (
 	"bytes"
 	"encoding/json"
@@ -12,8 +14,6 @@ import (
 
 // Читання вхідних повідомлень
 func (n *Node) handleBroadcastMessages() {
-	// NOTE: думаю, що треба зробити функцію для кожного випадка і обробляти її типу: go handleMsgNewTransaction(), тому що коли буде багато вхідних повідомлень, воно може їх просто пропускати
-	// або винести усю обробку в окрему gorutine, а n.topic.sub.Next буде кидати усі нові повідомлення в канал. таким чином можна зберегти послідовну обробку і не пропоскати повідомлення
 	for {
 		msg, err := n.topic.sub.Next(n.ctx)
 		if err != nil {
@@ -41,7 +41,7 @@ func (n *Node) handleBroadcastMessages() {
 			continue
 		}
 
-		log.Info().Str("отримав мовідомлення", string(message.Type))
+		log.Info().Str("отримав повідомлення", string(message.Type))
 
 		switch message.Type {
 		case MsgNewTransaction:
@@ -80,65 +80,21 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	}
 	log.Info().Uint32("height", block.Height).Int64("latency", time.Now().UnixMilli()-block.Timestamp).Msg("отримано новий блок")
 
-	// TODO: додати перевірку нагороди, яку він собі назначив
-	lastLocalBlock, err := n.bs.GetLastBlock()
-	if err != nil {
-		log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
-	}
-
-	// Перевірка блоку
-	if err = block.Verify(); err != nil {
-		log.Err(err).Msg("помилка перевірки блоку")
-		return
-	}
-	// перевірка усіх транзакцій в блоці
-	if err = block.VerifyTransactions(); err != nil {
-		log.Err(err).Msg("транзакції блоку не є валідними")
-		return
-	}
-	// чи правельна висота блоку який був отриманий (на один більше попереднього)
-	if lastLocalBlock.Height+1 != block.Height {
-		log.Error().Uint32("висота отриманого блоку", block.Height).Uint32("очікувана висота", lastLocalBlock.Height+1).Msg("помилка висоти блоку")
-		return
-	}
-	// Чи правельний творець блоку
-	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
-		log.Error().Hex("адреса творця блоку", block.Proposer).Hex("адреса валідатора, який поминен робити блок", n.nextProposer.Address).Msg("адреса творця блоку і того хто повинен його робити не збігаются")
-		return
-	}
-
-	bytesBlock, err := block.MarshalDeterministic()
+	blockBytes, err := block.MarshalDeterministic()
 	if err != nil {
 		panic(err)
 	}
 
-	sig, err := crypto.Sign(n.keys.Priv, bytesBlock)
+	if err := n.fullBlockVerefication(&block); err != nil {
+		panic(err)
+	}
+
+	msg, err := n.getVoteMsg(blockBytes)
 	if err != nil {
 		panic(err)
 	}
 
-	vote := chain.Vote{
-		Pub:       n.keys.Pub,
-		Signature: sig,
-	}
-
-	voteBytes, err := json.Marshal(vote)
-	if err != nil {
-		panic(err)
-	}
-
-	msg := Message{
-		Type:      MsgVote,
-		Timestamp: time.Now().UnixMilli(),
-		Data:      voteBytes,
-		Pub:       n.keys.Pub,
-	}
-
-	if err = msg.sign(n.keys.Priv); err != nil {
-		panic(err)
-	}
-
-	if err = n.topic.broadcast(&msg, n.ctx); err != nil {
+	if err = n.topic.broadcast(msg, n.ctx); err != nil {
 		panic(err)
 	}
 
@@ -163,7 +119,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 
 	for {
 		v := <-n.vote
-		if err = crypto.Verify(v.Pub, bytesBlock, v.Signature); err != nil {
+		if err = crypto.Verify(v.Pub, blockBytes, v.Signature); err != nil {
 			log.Info().Msg("голос не є вілідним")
 			continue
 		}
@@ -182,27 +138,12 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		}
 	}
 
-	commit := Commit{
-		Voters: votersList,
-		Block:  block,
-	}
-
-	commitBytes, err := json.Marshal(commit)
+	commitMsg, err := n.getCommitMsg(&votersList, &block)
 	if err != nil {
 		panic(err)
 	}
 
-	commitMsg := Message{
-		Type:      MsgCommit,
-		Timestamp: time.Now().UnixMilli(),
-		Data:      commitBytes,
-		Pub:       n.keys.Pub,
-	}
-	if err = commitMsg.sign(n.keys.Priv); err != nil {
-		panic(err)
-	}
-
-	if err = n.topic.broadcast(&commitMsg, n.ctx); err != nil {
+	if err = n.topic.broadcast(commitMsg, n.ctx); err != nil {
 		panic(err)
 	}
 	log.Debug().Msg("повідомлення commit відправлено")
@@ -226,7 +167,6 @@ func (n *Node) handleMsgCommit(data []byte) {
 	}
 
 	// TODO: перевірити дані з commit
-
 	// allValidators, err := n.bs.GetValidatorsList()
 	// if err != nil {
 	// 	panic(err)
@@ -236,57 +176,29 @@ func (n *Node) handleMsgCommit(data []byte) {
 	//
 	// }
 
-	n.bs.SaveBlock(&commit.Block)
+	if err := n.bs.SaveBlock(&commit.Block); err != nil {
+		panic(err)
+	}
 	log.Info().Hex("block hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("додано новий блок до лонцюжка")
 
-	// видалити транзакції з mempool, якщо вони є в блоці
-	go func() {
-		for _, tx := range commit.Block.Transactions {
-			n.mempool.DeleteIfExist(tx)
-		}
-	}()
+	go n.mempool.ClearMempool(commit.Block.Transactions)
 
-	for _, tx := range commit.Block.Transactions {
-		if bytes.Equal(tx.To, []byte(STAKE)) {
-			validator := chain.Validator{
-				Address: tx.PubKey, // NOTE: досі не вирішив, чи я використовую hash або pub
-				Amount:  tx.Amount,
-			}
-
-			n.bs.AddValidator(&validator)
-		}
+	if err := n.addValidatorsToDB(&commit.Block); err != nil {
+		panic(err)
 	}
 
-	val, err := n.chooseValidator()
-	if err != nil {
-		log.Error().Err(err).Msg("помилка вибору наступного валідатора")
-		return
+	if err := n.setNextProposer(); err != nil {
+		panic(err)
 	}
-	n.nextProposer = val
 
 	// я і є настпуний валідатор!
-	if bytes.Equal(val.Address, n.keys.Pub) {
-		newBlock := n.createNewBlock()
-
-		newBlockBytes, err := json.Marshal(newBlock)
+	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+		blockProposalMsg, err := n.getMsgBlockProposalMsg()
 		if err != nil {
-			log.Fatal().Err(err).Msg("помилка розпаковки нового блоку")
+			panic(err)
 		}
 
-		blockProposalMsg := Message{
-			Type:      MsgBlockProposal,
-			Timestamp: time.Now().UnixMilli(),
-			Data:      newBlockBytes,
-			Pub:       n.keys.Pub,
-		}
-
-		err = blockProposalMsg.sign(n.keys.Priv)
-		if err != nil {
-			log.Fatal().Err(err).Msg("помилка підпису нового блоку")
-		}
-
-		err = n.topic.broadcast(&blockProposalMsg, n.ctx)
-		if err != nil {
+		if err = n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
 			log.Error().Err(err).Msg("помилка трансляції нового блоку")
 		}
 	}

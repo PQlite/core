@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
@@ -76,7 +77,57 @@ func (n *Node) addRewardTx(b *chain.Block) {
 	b.Transactions = append(b.Transactions, &tx)
 }
 
-func (n *Node) processNewBlock() {
+func (n *Node) fullBlockVerefication(block *chain.Block) error {
+	// Чи правельний творець блоку
+	if bytes.Equal(block.Proposer, n.nextProposer.Address) {
+		return fmt.Errorf("помилочка")
+	}
+	// чи правельна висота блоку який був отриманий (на один більше попереднього)
+	lastLocalBlock, err := n.bs.GetLastBlock()
+	if err != nil {
+		return err
+	}
+	if lastLocalBlock.Height+1 != block.Height {
+		return fmt.Errorf("hello")
+	}
+	// Перевірка підпису і hash`у
+	if err := block.Verify(); err != nil {
+		return fmt.Errorf("верефікаця блоку не пройшла: ", err)
+	}
+	// Перевірка підпису і балансів усіх транзакцій в тому чеслі перевірку нагороди для валідатора
+	if err := block.VerifyTransactions(); err != nil {
+		log.Error().Err(err).Msg("верефікаця транзакцій блоку не пройшла:")
+		return err
+	}
+
+	return nil
 }
 
-// TODO: написати це, щоб не було повтору в node.go і sync.go
+func (n *Node) setNextProposer() error {
+	nextProposer, err := n.chooseValidator()
+	if err != nil {
+		log.Error().Err(err).Msg("помилка вибору наступного валідатора")
+		return err
+	}
+	n.nextProposer = nextProposer
+	return nil
+}
+
+func (n *Node) addValidatorsToDB(block *chain.Block) error {
+	// ISSUE: треба додавати баланс до валідатора, якщо він вже існує, а не перезаписувати його
+	for _, tx := range block.Transactions {
+		if bytes.Equal(tx.To, []byte(STAKE)) {
+			validator := chain.Validator{
+				Address: tx.PubKey,
+				Amount:  tx.Amount,
+			}
+
+			if err := n.bs.AddValidator(&validator); err != nil {
+				return err
+			}
+
+			log.Info().Float32("amount", validator.Amount).Msg("додано валідатора")
+		}
+	}
+	return nil
+}

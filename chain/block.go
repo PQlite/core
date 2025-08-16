@@ -62,6 +62,7 @@ func (b *Block) GenerateHash() error {
 }
 
 func (b *Block) Verify() error {
+	// TODO: додати перевірку hash
 	// NOTE: можна зробити і краще
 	//       скопіювати b і видалити hash, signature
 	blockForVerify := Block{

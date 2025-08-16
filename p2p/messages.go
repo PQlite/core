@@ -2,9 +2,11 @@ package p2p
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/crypto"
+	"github.com/rs/zerolog/log"
 )
 
 type MessageType string
@@ -81,4 +83,85 @@ func (m *Message) verify() bool {
 		return false
 	}
 	return true
+}
+
+func (n *Node) getMsgBlockProposalMsg() (*Message, error) {
+	newBlock := n.createNewBlock()
+
+	newBlockBytes, err := json.Marshal(newBlock)
+	if err != nil {
+		log.Error().Err(err).Msg("помилка розпаковки нового блоку")
+		return nil, err
+	}
+
+	blockProposalMsg := Message{
+		Type:      MsgBlockProposal,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      newBlockBytes,
+		Pub:       n.keys.Pub,
+	}
+
+	err = blockProposalMsg.sign(n.keys.Priv)
+	if err != nil {
+		log.Error().Err(err).Msg("помилка підпису нового блоку")
+		return nil, err
+	}
+
+	return &blockProposalMsg, nil
+}
+
+func (n *Node) getCommitMsg(voters *[]chain.Vote, b *chain.Block) (*Message, error) {
+	commit := Commit{
+		Voters: *voters,
+		Block:  *b,
+	}
+
+	commitBytes, err := json.Marshal(commit)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := Message{
+		Type:      MsgCommit,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      commitBytes,
+		Pub:       n.keys.Pub,
+	}
+
+	if err = msg.sign(n.keys.Priv); err != nil {
+		return nil, err
+	}
+
+	return &msg, nil
+}
+
+// TODO: додати логування
+func (n *Node) getVoteMsg(blockBytes []byte) (*Message, error) {
+	sig, err := crypto.Sign(n.keys.Priv, blockBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	vote := chain.Vote{
+		Pub:       n.keys.Pub,
+		Signature: sig,
+	}
+
+	voteBytes, err := json.Marshal(vote)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := Message{
+		Type:      MsgVote,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      voteBytes,
+		Pub:       n.keys.Pub,
+	}
+
+	if err = msg.sign(n.keys.Priv); err != nil {
+		return nil, err
+	}
+
+	return &msg, nil
 }

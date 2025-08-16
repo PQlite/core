@@ -3,7 +3,6 @@ package chain
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"math"
 )
@@ -47,12 +46,10 @@ func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, e
 	for _, v := range validators {
 		current += v.Amount
 		if current >= target {
-			println(hex.EncodeToString(v.Address))
 			return &v, nil
 		}
 	}
 
-	println(1)
 	// Fallback to last validator in case of rounding errors
 	return &validators[len(validators)-1], nil
 }

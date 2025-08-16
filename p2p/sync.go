@@ -18,6 +18,9 @@ func (n *Node) syncBlockchain() {
 		if err != nil {
 			panic(err)
 		}
+		if err := n.setNextProposer(); err != nil {
+			panic(err)
+		}
 
 		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
 		if err != nil {

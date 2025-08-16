@@ -81,7 +81,7 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	// Чи правельний творець блоку
 	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
 		log.Error().Hex("творець блоку", block.Proposer).Hex("хто повинен робити блок", n.nextProposer.Address).Msg("творець блоку і той, хто повинен робити блок, не збігаются")
-		return fmt.Errorf("")
+		return fmt.Errorf("err")
 	}
 	// чи правельна висота блоку який був отриманий (на один більше попереднього)
 	lastLocalBlock, err := n.bs.GetLastBlock()
@@ -91,12 +91,12 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	}
 	if lastLocalBlock.Height+1 != block.Height {
 		log.Error().Uint32("локальний блоку", lastLocalBlock.Height).Uint32("отриманий блоку", block.Height).Msg("висота отриманого блоку і очікувана висота не збігаются")
-		return fmt.Errorf("")
+		return fmt.Errorf("err")
 	}
 	// Перевірка підпису і hash`у
 	if err := block.Verify(); err != nil {
 		log.Error().Err(err).Msg("валідація підпису блоку не пройшла")
-		return fmt.Errorf("")
+		return fmt.Errorf("err")
 	}
 	// Перевірка підпису і балансів усіх транзакцій в тому чеслі перевірку нагороди для валідатора
 	if err := block.VerifyTransactions(); err != nil {

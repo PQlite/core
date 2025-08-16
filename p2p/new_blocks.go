@@ -91,6 +91,7 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	}
 	if lastLocalBlock.Height+1 != block.Height {
 		log.Error().Uint32("локальний блоку", lastLocalBlock.Height).Uint32("отриманий блоку", block.Height).Msg("висота отриманого блоку і очікувана висота не збігаются")
+		n.syncBlockchain()
 		return fmt.Errorf("err")
 	}
 	// Перевірка підпису і hash`у

@@ -82,20 +82,23 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 
 	blockBytes, err := block.MarshalDeterministic()
 	if err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка перетворення блоку на []byte")
+		return
 	}
 
 	if err := n.fullBlockVerefication(&block); err != nil {
-		panic(err)
+		return
 	}
 
 	msg, err := n.getVoteMsg(blockBytes)
 	if err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка створення повідомлення для голосування")
+		return
 	}
 
 	if err = n.topic.broadcast(msg, n.ctx); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка розсилання повідомлення голосування")
+		return
 	}
 
 	// якщо це не я роблю блок

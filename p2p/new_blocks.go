@@ -80,26 +80,29 @@ func (n *Node) addRewardTx(b *chain.Block) {
 func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	// Чи правельний творець блоку
 	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
-		return fmt.Errorf("помилочка")
+		log.Error().Hex("творець блоку", block.Proposer).Hex("хто повинен робити блок", n.nextProposer.Address).Msg("творець блоку і той, хто повинен робити блок, не збігаются")
+		return fmt.Errorf("")
 	}
 	// чи правельна висота блоку який був отриманий (на один більше попереднього)
 	lastLocalBlock, err := n.bs.GetLastBlock()
 	if err != nil {
+		log.Error().Err(err).Msg("помилка отримання крайнього блоку з бази даних")
 		return err
 	}
 	if lastLocalBlock.Height+1 != block.Height {
-		return fmt.Errorf("hello")
+		log.Error().Uint32("локальний блоку", lastLocalBlock.Height).Uint32("отриманий блоку", block.Height).Msg("висота отриманого блоку і очікувана висота не збігаются")
+		return fmt.Errorf("")
 	}
 	// Перевірка підпису і hash`у
 	if err := block.Verify(); err != nil {
-		return fmt.Errorf("верефікаця блоку не пройшла: ", err)
+		log.Error().Err(err).Msg("валідація підпису блоку не пройшла")
+		return fmt.Errorf("")
 	}
 	// Перевірка підпису і балансів усіх транзакцій в тому чеслі перевірку нагороди для валідатора
 	if err := block.VerifyTransactions(); err != nil {
-		log.Error().Err(err).Msg("верефікаця транзакцій блоку не пройшла:")
+		log.Error().Err(err).Msg("верефікаця транзакцій блоку не пройшла")
 		return err
 	}
-
 	return nil
 }
 

@@ -3,6 +3,7 @@
 package api
 
 import (
+	"encoding/hex"
 	"net"
 	"sort"
 	"strconv"
@@ -65,6 +66,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/block/:id", s.handleGetBlock)
 	s.app.Get("/txs", s.handleGetMempoolLen)
 	s.app.Get("/blocks", s.handleGetAllBlocks)
+	s.app.Get("/addr/:id", s.handleGetBalance)
 	s.app.Post("/tx", s.handlePostTx)
 
 	// щоб сервер не відповідав усіляким підораскам
@@ -145,6 +147,27 @@ func (s *Server) handlePostTx(c *fiber.Ctx) error {
 
 func (s *Server) handleGetMempoolLen(c *fiber.Ctx) error {
 	return c.SendString(strconv.Itoa(len(s.mempool.TXs)))
+}
+
+func (s *Server) handleGetBalance(c *fiber.Ctx) error {
+	addr := c.Params("id")
+	addrBytes, err := hex.DecodeString(addr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{
+			"error": err,
+		})
+	}
+
+	wallet, err := s.bs.GetWalletByAddress(addrBytes)
+	if err != nil {
+		if err.Error() == "Key not found" {
+			return c.Status(200).JSON(chain.Wallet{Address: addrBytes})
+		}
+		return c.Status(400).JSON(fiber.Map{
+			"error": err,
+		})
+	}
+	return c.Status(200).JSON(wallet)
 }
 
 // Start запускає HTTP-сервер.

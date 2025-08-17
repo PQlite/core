@@ -179,13 +179,11 @@ func (n *Node) handleMsgCommit(data []byte) {
 			return
 		}
 
-		for _, validator := range *allValidators {
-			if bytes.Equal(validator.Address, v.Pub) {
-				continue
-			}
+		contains, _ := containsInValidators(v.Pub, allValidators)
+		if !contains {
+			log.Error().Hex("voter", v.Pub).Msg("голос не був в списку валідаторів")
+			return
 		}
-		log.Error().Hex("voter", v.Pub).Msg("голос не був в списку валідаторів")
-		return
 	}
 
 	if err := n.bs.SaveBlock(&commit.Block); err != nil {

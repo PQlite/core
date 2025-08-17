@@ -62,11 +62,10 @@ func (n *Node) createNewBlock() chain.Block {
 func (n *Node) addRewardTx(b *chain.Block) {
 	tx := chain.Transaction{
 		From:      []byte(REWARDWALLET),
-		To:        b.Proposer,
+		To:        n.keys.Pub,
 		Amount:    REWARD,
 		Timestamp: time.Now().UnixMilli(),
-		Nonce:     1, // FIXME: зробити нормально
-		PubKey:    n.keys.Pub,
+		Nonce:     0,
 	}
 
 	err := tx.Sign(n.keys.Priv)
@@ -117,12 +116,35 @@ func (n *Node) setNextProposer() error {
 	return nil
 }
 
+func (n *Node) checkBalances(txs []*chain.Transaction) (bool, error) {
+	for _, tx := range txs {
+		if bytes.Equal(tx.From, []byte(STAKE)) {
+			continue
+		}
+
+		wallet, err := n.bs.GetWalletByAddress(tx.From)
+		if err != nil {
+			return false, err
+		}
+
+		// Не вистачає балансу
+		if wallet.Balance < tx.Amount {
+			return false, nil
+		}
+		// Nonce не правельний
+		if wallet.Nonce <= tx.Nonce {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func (n *Node) addValidatorsToDB(block *chain.Block) error {
 	// ISSUE: треба додавати баланс до валідатора, якщо він вже існує, а не перезаписувати його
 	for _, tx := range block.Transactions {
 		if bytes.Equal(tx.To, []byte(STAKE)) {
 			validator := chain.Validator{
-				Address: tx.PubKey,
+				Address: tx.From,
 				Amount:  tx.Amount,
 			}
 

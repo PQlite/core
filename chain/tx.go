@@ -14,7 +14,7 @@ type Transaction struct {
 	To        []byte  `json:"to"`
 	Amount    float32 `json:"amount"`
 	Timestamp int64   `json:"timestamp"`
-	Nonce     int     `json:"nonce"`
+	Nonce     uint32  `json:"nonce"`
 	Signature []byte  `json:"signature"`
 }
 

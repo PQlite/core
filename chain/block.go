@@ -98,6 +98,7 @@ func (b *Block) VerifyTransactions() error {
 			log.Error().Err(err).Msg("помилка перевірки підписку транзакцій")
 			return err
 		}
+
 	}
 	return nil
 }

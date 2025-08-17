@@ -103,7 +103,7 @@ func (b *Block) VerifyTransactions() error {
 	return nil
 }
 
-func (b Block) MarshalDeterministic() ([]byte, error) {
+func (b *Block) MarshalDeterministic() ([]byte, error) {
 	b.sortTransactions()
 
 	res, err := json.Marshal(b)

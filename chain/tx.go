@@ -3,6 +3,7 @@
 package chain
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/PQlite/crypto"
@@ -52,7 +53,15 @@ func (t *Transaction) Verify() error {
 		return err
 	}
 
-	if err = crypto.Verify(t.From, data, t.Signature); err != nil {
+	// вийнятки для системних адрес.
+	var pubKey []byte
+	if bytes.Equal(t.From, []byte("reward")) || bytes.Equal(t.From, []byte("stake")) {
+		pubKey = t.To
+	} else {
+		pubKey = t.From
+	}
+
+	if err = crypto.Verify(pubKey, data, t.Signature); err != nil {
 		return err
 	}
 	return nil

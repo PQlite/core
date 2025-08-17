@@ -190,6 +190,10 @@ func (n *Node) handleMsgCommit(data []byte) {
 		panic(err)
 	}
 
+	if err := n.updateBalancesNonces(&commit.Block); err != nil {
+		panic(err)
+	}
+
 	if err := n.setNextProposer(); err != nil {
 		panic(err)
 	}

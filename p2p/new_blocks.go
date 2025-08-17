@@ -149,6 +149,45 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 	return nil
 }
 
+func (n *Node) updateBalancesNonces(b *chain.Block) error {
+	for _, tx := range b.Transactions {
+		// HACK: не найкраще рішення, через повторення логіки
+		if bytes.Equal(tx.From, []byte(STAKE)) || bytes.Equal(tx.From, []byte(REWARDWALLET)) {
+			walletTo, err := n.bs.GetWalletByAddress(tx.To)
+			if err != nil {
+				return err
+			}
+			walletTo.Balance += tx.Amount
+			walletTo.Nonce++
+			n.bs.UpdateBalance(&walletTo)
+			continue
+		}
+		walletFrom, err := n.bs.GetWalletByAddress(tx.From)
+		if err != nil {
+			return err
+		}
+		walletTo, err := n.bs.GetWalletByAddress(tx.To)
+		if err != nil {
+			return err
+		}
+
+		// оновлюю баланси
+		walletFrom.Balance -= tx.Amount
+		walletTo.Balance += tx.Amount
+
+		// додаю +1 до Nonce
+		walletFrom.Nonce++
+
+		if err := n.bs.UpdateBalance(&walletFrom); err != nil {
+			return err
+		}
+		if err := n.bs.UpdateBalance(&walletTo); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (n *Node) addValidatorsToDB(block *chain.Block) error {
 	// ISSUE: треба додавати баланс до валідатора, якщо він вже існує, а не перезаписувати його
 	for _, tx := range block.Transactions {

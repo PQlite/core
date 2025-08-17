@@ -10,6 +10,7 @@ import (
 var walletPrefix = []byte("wallet")
 
 func (bs *BlockStorage) GetWalletByAddress(addr []byte) (chain.Wallet, error) {
+	// TODO: треба щоб повертала структура wallet, якщо є помилка "Key not found"
 	var wallet chain.Wallet
 	key := append(walletPrefix, addr...)
 

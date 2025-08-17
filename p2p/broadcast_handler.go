@@ -33,7 +33,7 @@ func (n *Node) handleBroadcastMessages() {
 				log.Debug().Msg("повідомлення від себе")
 				continue
 			}
-			log.Debug().Msg("отримано власний блок")
+			log.Debug().Str("type", string(message.Type)).Msg("отримано власне повідомлення типу")
 		}
 
 		if !message.verify() {
@@ -41,7 +41,7 @@ func (n *Node) handleBroadcastMessages() {
 			continue
 		}
 
-		log.Info().Str("отримав повідомлення", string(message.Type))
+		log.Debug().Str("type", string(message.Type)).Msg("отримав повідомлення")
 
 		switch message.Type {
 		case MsgNewTransaction:

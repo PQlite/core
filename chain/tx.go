@@ -15,7 +15,6 @@ type Transaction struct {
 	Amount    float32 `json:"amount"`
 	Timestamp int64   `json:"timestamp"`
 	Nonce     int     `json:"nonce"`
-	PubKey    []byte  `json:"pubkey"`
 	Signature []byte  `json:"signature"`
 }
 
@@ -26,7 +25,6 @@ func (t Transaction) GetUnsignTransaction() *Transaction {
 		Amount:    t.Amount,
 		Timestamp: t.Timestamp,
 		Nonce:     t.Nonce,
-		PubKey:    t.PubKey,
 	}
 }
 
@@ -54,7 +52,7 @@ func (t *Transaction) Verify() error {
 		return err
 	}
 
-	if err = crypto.Verify(t.PubKey, data, t.Signature); err != nil {
+	if err = crypto.Verify(t.From, data, t.Signature); err != nil {
 		return err
 	}
 	return nil

@@ -160,9 +160,6 @@ func (s *Server) handleGetBalance(c *fiber.Ctx) error {
 
 	wallet, err := s.bs.GetWalletByAddress(addrBytes)
 	if err != nil {
-		if err.Error() == "Key not found" {
-			return c.Status(200).JSON(chain.Wallet{Address: addrBytes})
-		}
 		return c.Status(400).JSON(fiber.Map{
 			"error": err,
 		})

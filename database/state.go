@@ -24,6 +24,13 @@ func (bs *BlockStorage) GetWalletByAddress(addr []byte) (chain.Wallet, error) {
 			return json.Unmarshal(val, &wallet)
 		})
 	}); err != nil {
+		if err.Error() == "Key not found" {
+			return chain.Wallet{
+				Address: addr,
+				Balance: 0,
+				Nonce:   0,
+			}, nil
+		}
 		return wallet, err
 	}
 

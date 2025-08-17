@@ -170,14 +170,24 @@ func (n *Node) handleMsgCommit(data []byte) {
 	}
 
 	// TODO: перевірити дані з commit
-	// allValidators, err := n.bs.GetValidatorsList()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// for _, v := range commit.Voters {
-	// 	v.
-	//
-	// }
+	allValidators, err := n.bs.GetValidatorsList()
+	if err != nil {
+		panic(err)
+	}
+	for _, v := range commit.Voters {
+		if err := v.Verify(&commit.Block); err != nil {
+			log.Error().Hex("voter", v.Pub).Msg("помилка підтвердження підпису голосу")
+			return
+		}
+
+		for _, validator := range *allValidators {
+			if bytes.Equal(validator.Address, v.Pub) {
+				continue
+			}
+		}
+		log.Error().Hex("voter", v.Pub).Msg("голос не був в списку валідаторів")
+		return
+	}
 
 	if err := n.bs.SaveBlock(&commit.Block); err != nil {
 		panic(err)

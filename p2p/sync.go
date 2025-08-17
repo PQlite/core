@@ -76,17 +76,18 @@ func (n *Node) syncBlockchain() {
 		}
 
 		if err := n.fullBlockVerefication(&respBlock); err != nil {
-			panic(err)
+			log.Fatal().Err(err).Msg("помилочка")
 		}
-
 		if err := n.bs.SaveBlock(&respBlock); err != nil {
 			panic(err)
 		}
-		log.Info().Uint32("height", respBlock.Height).Int64("latency", time.Now().UnixMilli()-respMsg.Timestamp).Msg("блок отримано")
-
 		if err := n.addValidatorsToDB(&respBlock); err != nil {
 			panic(err)
 		}
+		if err := n.updateBalancesNonces(&respBlock); err != nil {
+			panic(err)
+		}
+		log.Info().Uint32("height", respBlock.Height).Int64("latency", time.Now().UnixMilli()-respMsg.Timestamp).Msg("додано новий блок до ланцюжка")
 	}
 }
 

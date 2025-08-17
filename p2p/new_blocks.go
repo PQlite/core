@@ -139,7 +139,7 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 
 		// Не вистачає балансу
 		if wallet.Balance < tx.Amount {
-			return fmt.Errorf("гаманець не має доастатьню кількість грошей для переказу")
+			return fmt.Errorf("гаманець не має достатньої кількість грошей для переказу")
 		}
 		// Nonce не правельний
 		if tx.Nonce != wallet.Nonce+1 {

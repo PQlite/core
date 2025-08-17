@@ -16,7 +16,6 @@ type Transaction struct {
 	Amount    float32 `json:"amount"`
 	Timestamp int64   `json:"timestamp"`
 	Nonce     uint32  `json:"nonce"`
-	Fee       float32 `json:"fee"`
 	Signature []byte  `json:"signature"`
 }
 
@@ -27,7 +26,6 @@ func (t Transaction) GetUnsignTransaction() *Transaction {
 		Amount:    t.Amount,
 		Timestamp: t.Timestamp,
 		Nonce:     t.Nonce,
-		Fee:       t.Fee,
 	}
 }
 

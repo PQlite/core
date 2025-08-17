@@ -25,9 +25,10 @@ func main() {
 	if err != nil {
 		if err.Error() == "no blocks found" {
 			log.Info().Msg("база даних порожня, початок створення genesis блоку")
-			b, val := chain.CreateGenesisBlock()
+			b, val, wallet := chain.CreateGenesisBlock()
 			bs.SaveBlock(&b)
 			bs.AddValidator(&val)
+			bs.UpdateBalance(&wallet)
 			log.Info().Msg("genesis блок створено")
 		}
 	}

@@ -29,7 +29,7 @@ func (bs *BlockStorage) GetWalletByAddress(addr []byte) (chain.Wallet, error) {
 	return wallet, nil
 }
 
-func (bs *BlockStorage) UpdateBalance(wallet chain.Wallet) error {
+func (bs *BlockStorage) UpdateBalance(wallet *chain.Wallet) error {
 	key := append(walletPrefix, wallet.Address...)
 	data, err := json.Marshal(wallet)
 	if err != nil {

@@ -114,7 +114,7 @@ func (b *Block) MarshalDeterministic() ([]byte, error) {
 	return res, nil
 }
 
-func CreateGenesisBlock() (Block, Validator) {
+func CreateGenesisBlock() (Block, Validator, Wallet) {
 	genesisReceiverPubKeyBase64 := "jiiHWiJWyBn42vc8qNEdNY04hVysOnWl0Vx5Xb/mdGo="
 	pubBytes, err := base64.StdEncoding.DecodeString(genesisReceiverPubKeyBase64)
 	if err != nil {
@@ -128,5 +128,10 @@ func CreateGenesisBlock() (Block, Validator) {
 		Address: pubBytes,
 		Amount:  1,
 	}
-	return b, val
+	wallet := Wallet{
+		Address: pubBytes,
+		Balance: 10,
+		Nonce:   0,
+	}
+	return b, val, wallet
 }

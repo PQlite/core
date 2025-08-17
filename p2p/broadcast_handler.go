@@ -127,12 +127,11 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 			continue
 		}
 
-		votersList = append(votersList, v)
+		contais, validator := containsInValidators(v.Pub, allValidators)
+		if contais {
+			accceptedAmount += validator.Amount
 
-		for _, validator := range *allValidators {
-			if bytes.Equal(v.Pub, validator.Address) {
-				accceptedAmount += validator.Amount
-			}
+			votersList = append(votersList, v)
 		}
 
 		// NOTE: для релізу погано, але зараз ок
@@ -231,4 +230,13 @@ func drainChannel[T any](ch chan T) {
 			return
 		}
 	}
+}
+
+func containsInValidators(pub []byte, validators *[]chain.Validator) (bool, *chain.Validator) {
+	for _, v := range *validators {
+		if bytes.Equal(pub, v.Address) {
+			return true, &v
+		}
+	}
+	return false, nil
 }

@@ -143,7 +143,7 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 		}
 		// Nonce не правельний
 		if tx.Nonce != wallet.Nonce+1 {
-			return fmt.Errorf("транзакція має не правельний Nonce: %d", tx.Nonce)
+			return fmt.Errorf("транзакція має не правельний Nonce: %d, коли Nonce гаманця це: %d", tx.Nonce, wallet.Nonce)
 		}
 	}
 	return nil
@@ -152,6 +152,7 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 func (n *Node) updateBalancesNonces(b *chain.Block) error {
 	for _, tx := range b.Transactions {
 		// HACK: не найкраще рішення, через повторення логіки
+		// HACK: якщо той, хто робить блок, відправить транзакцію то Nonce оновится 2 рази
 		if bytes.Equal(tx.From, []byte(STAKE)) || bytes.Equal(tx.From, []byte(REWARDWALLET)) {
 			walletTo, err := n.bs.GetWalletByAddress(tx.To)
 			if err != nil {

@@ -117,11 +117,12 @@ func (n *Node) Start() {
 	n.host.Close()
 }
 
+// TODO: треба перевіряти баланси і nonce перед додаванням, або перевіряти їх перед тим, як додати в блок
 func (n *Node) handleTxCh() {
 	for {
 		select {
 		case tx := <-n.TxCh:
-			log.Info().Hex("tx_from", tx.From).Msg("Received new transaction from API")
+			log.Info().Hex("tx_from", tx.From).Msg("отримано нову транзакцію з API")
 
 			if err := n.mempool.Add(tx); err != nil {
 				log.Error().Err(err).Msg("помилка додавання транзакції в mempool")

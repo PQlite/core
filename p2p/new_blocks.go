@@ -98,11 +98,17 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 		log.Error().Err(err).Hex("proposer", block.Proposer).Msg("валідація підпису блоку не пройшла")
 		return fmt.Errorf("err")
 	}
-	// Перевірка підпису і балансів усіх транзакцій в тому чеслі перевірку нагороди для валідатора
+	// Перевірка підпису усіх транзакцій
 	if err := block.VerifyTransactions(); err != nil {
 		log.Error().Err(err).Msg("верефікаця транзакцій блоку не пройшла")
 		return err
 	}
+	// Перевірка балансів і Nonce`ів усіх транзакцій
+	if err := n.checkBalances(block.Transactions); err != nil {
+		log.Error().Err(err).Msg("помилка перевірки бланасів/nonce транзакцій")
+		return err
+	}
+
 	return nil
 }
 
@@ -116,27 +122,31 @@ func (n *Node) setNextProposer() error {
 	return nil
 }
 
-func (n *Node) checkBalances(txs []*chain.Transaction) (bool, error) {
+func (n *Node) checkBalances(txs []*chain.Transaction) error {
 	for _, tx := range txs {
-		if bytes.Equal(tx.From, []byte(STAKE)) {
-			continue
+		// Перевірка транзакції нагороди
+		if bytes.Equal(tx.From, []byte(REWARDWALLET)) {
+			if tx.Amount == REWARD {
+				continue
+			}
+			return fmt.Errorf("транзакція нагороди має не правельну нагороду")
 		}
 
 		wallet, err := n.bs.GetWalletByAddress(tx.From)
 		if err != nil {
-			return false, err
+			return fmt.Errorf("помилка отримання даних про гаманець: %w", err)
 		}
 
 		// Не вистачає балансу
 		if wallet.Balance < tx.Amount {
-			return false, nil
+			return fmt.Errorf("гаманець не має доастатьню кількість грошей для переказу")
 		}
 		// Nonce не правельний
 		if wallet.Nonce <= tx.Nonce {
-			return false, nil
+			return fmt.Errorf("транзакція має не правельний Nonce")
 		}
 	}
-	return true, nil
+	return nil
 }
 
 func (n *Node) addValidatorsToDB(block *chain.Block) error {

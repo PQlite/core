@@ -193,16 +193,22 @@ func (n *Node) addValidatorsToDB(block *chain.Block) error {
 	// ISSUE: треба додавати баланс до валідатора, якщо він вже існує, а не перезаписувати його
 	for _, tx := range block.Transactions {
 		if bytes.Equal(tx.To, []byte(STAKE)) {
-			validator := chain.Validator{
-				Address: tx.From,
-				Amount:  tx.Amount,
+			validator, _ := n.bs.GetValidator(tx.From)
+			if validator != nil {
+				log.Info().Int64("був", validator.Amount).Int64("став", validator.Amount+tx.Amount).Msg("оновлено баланс валідатора")
+				validator.Amount += tx.Amount
+			} else {
+				validator = &chain.Validator{
+					Address: tx.From,
+					Amount:  tx.Amount,
+				}
+				log.Info().Int64("amount", validator.Amount).Msg("додано валідатора")
 			}
 
-			if err := n.bs.AddValidator(&validator); err != nil {
+			if err := n.bs.AddValidator(validator); err != nil {
 				return err
 			}
 
-			log.Info().Int64("amount", validator.Amount).Msg("додано валідатора")
 		}
 	}
 	return nil

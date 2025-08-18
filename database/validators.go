@@ -52,6 +52,30 @@ func (bs *BlockStorage) GetValidatorsList() (*[]chain.Validator, error) {
 	return &res, err
 }
 
+func (bs *BlockStorage) GetValidator(addr []byte) (*chain.Validator, error) {
+	var validator chain.Validator
+
+	err := bs.db.View(func(txn *badger.Txn) error {
+		key := getValidatorKey(addr)
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
+		}
+
+		err = item.Value(func(val []byte) error {
+			validator.Address = addr
+			validator.Amount = bytesToInt64(val)
+			return nil
+		})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &validator, nil
+}
+
 func int64ToBytes(i int64) []byte {
 	iBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(iBytes, uint64(i))

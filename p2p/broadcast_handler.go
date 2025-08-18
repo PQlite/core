@@ -186,15 +186,6 @@ func (n *Node) handleMsgCommit(data []byte) {
 		}
 	}
 
-	lastLocalBlock, err := n.bs.GetLastBlock()
-	if err != nil {
-		panic(err)
-	}
-	if lastLocalBlock.Height+1 != commit.Block.Height {
-		n.syncBlockchain()
-		return
-	}
-
 	if err := n.bs.SaveBlock(&commit.Block); err != nil {
 		panic(err)
 	}

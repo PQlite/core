@@ -50,5 +50,5 @@ func (bs *BlockStorage) UpdateBalance(wallet *chain.Wallet) error {
 		return err
 	}
 
-	return nil
+	return bs.db.Sync()
 }

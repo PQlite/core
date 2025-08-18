@@ -3,7 +3,6 @@
 package database
 
 import (
-	"bytes"
 	"encoding/binary"
 
 	"github.com/PQlite/core/chain"
@@ -16,7 +15,7 @@ func (bs *BlockStorage) AddValidator(validator *chain.Validator) error {
 
 	key := getValidatorKey(validator.Address)
 
-	err := txn.Set(key, float32ToBytes(validator.Amount))
+	err := txn.Set(key, int64ToBytes(validator.Amount))
 	if err != nil {
 		return err
 	}
@@ -40,7 +39,7 @@ func (bs *BlockStorage) GetValidatorsList() (*[]chain.Validator, error) {
 
 			err := item.Value(func(v []byte) error {
 				address := getValidatorAddress(key)
-				amount := bytesToFloat32(v)
+				amount := bytesToInt64(v)
 				res = append(res, chain.Validator{Address: address, Amount: amount})
 				return nil
 			})
@@ -53,16 +52,14 @@ func (bs *BlockStorage) GetValidatorsList() (*[]chain.Validator, error) {
 	return &res, err
 }
 
-func float32ToBytes(f float32) []byte {
-	buf := new(bytes.Buffer)
-	_ = binary.Write(buf, binary.LittleEndian, f)
-	return buf.Bytes()
+func int64ToBytes(i int64) []byte {
+	iBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(iBytes, uint64(i))
+	return iBytes
 }
 
-func bytesToFloat32(b []byte) float32 {
-	var f float32
-	_ = binary.Read(bytes.NewReader(b), binary.LittleEndian, &f)
-	return f
+func bytesToInt64(b []byte) int64 {
+	return int64(binary.BigEndian.Uint64(b))
 }
 
 // додає v_ до адреси

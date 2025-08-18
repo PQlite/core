@@ -9,7 +9,7 @@ import (
 
 type Validator struct {
 	Address []byte
-	Amount  float32
+	Amount  int64
 }
 
 // SelectNextProposer deterministically selects the next proposer based on block hash
@@ -20,11 +20,8 @@ func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, e
 	}
 
 	// Calculate total stake
-	totalStake := float32(0)
+	totalStake := int64(0)
 	for _, v := range validators {
-		if v.Amount < 0 {
-			return nil, errors.New("negative stake amount")
-		}
 		totalStake += v.Amount
 	}
 
@@ -37,11 +34,11 @@ func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, e
 	seed := binary.BigEndian.Uint64(hash[:8]) // Use first 8 bytes as seed
 
 	// Generate deterministic random value between 0 and 1
-	randVal := float32(seed) / float32(math.MaxUint64)
+	randVal := int64(seed) / math.MaxInt64
 
 	// Select validator based on weighted random selection
 	target := randVal * totalStake
-	current := float32(0)
+	current := int64(0)
 
 	for _, v := range validators {
 		current += v.Amount

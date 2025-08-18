@@ -114,8 +114,8 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		panic(err)
 	}
 
-	var accceptedAmount float32
-	var stakeAmount float32
+	var accceptedAmount int64
+	var stakeAmount int64
 	for _, validator := range *allValidators {
 		stakeAmount += validator.Amount
 	}

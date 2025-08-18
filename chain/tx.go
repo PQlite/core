@@ -11,12 +11,12 @@ import (
 )
 
 type Transaction struct {
-	From      []byte  `json:"from"`
-	To        []byte  `json:"to"`
-	Amount    float32 `json:"amount"`
-	Timestamp int64   `json:"timestamp"`
-	Nonce     uint32  `json:"nonce"`
-	Signature []byte  `json:"signature"`
+	From      []byte `json:"from"`
+	To        []byte `json:"to"`
+	Amount    int64  `json:"amount"`
+	Timestamp int64  `json:"timestamp"`
+	Nonce     uint32 `json:"nonce"`
+	Signature []byte `json:"signature"`
 }
 
 func (t Transaction) GetUnsignTransaction() *Transaction {

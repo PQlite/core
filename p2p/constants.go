@@ -6,7 +6,7 @@ const (
 	// wallets
 	STAKE        = "stake"
 	REWARDWALLET = "reward"
-	REWARD       = float32(1)
+	REWARD       = int64(1)
 
 	// network
 	ns                         = "PQlite_test"

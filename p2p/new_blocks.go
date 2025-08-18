@@ -202,7 +202,7 @@ func (n *Node) addValidatorsToDB(block *chain.Block) error {
 				return err
 			}
 
-			log.Info().Float32("amount", validator.Amount).Msg("додано валідатора")
+			log.Info().Int64("amount", validator.Amount).Msg("додано валідатора")
 		}
 	}
 	return nil

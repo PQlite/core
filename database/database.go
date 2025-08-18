@@ -33,6 +33,13 @@ func (bs *BlockStorage) Close() error {
 }
 
 func (bs *BlockStorage) SaveBlock(block *chain.Block) error {
+	lastLocalBlock, err := bs.GetLastBlock()
+	if err != nil {
+		return err
+	}
+	if block.Height != lastLocalBlock.Height+1 {
+		return fmt.Errorf("помилочка блоку")
+	}
 	height := fmt.Sprintf("block:%d", block.Height)
 	data, err := json.Marshal(block)
 	if err != nil {

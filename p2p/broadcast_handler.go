@@ -204,6 +204,7 @@ func (n *Node) handleMsgCommit(data []byte) {
 	if err := n.setNextProposer(); err != nil {
 		panic(err)
 	}
+	log.Debug().Hex("proposer", n.nextProposer.Address).Int64("баланс", n.nextProposer.Amount).Msg("наступний proposer")
 
 	// я і є настпуний валідатор!
 	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {

@@ -2,9 +2,8 @@ package chain
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"errors"
-	"math"
+	"math/big"
 )
 
 type Validator struct {
@@ -12,70 +11,34 @@ type Validator struct {
 	Amount  int64
 }
 
-// SelectNextProposer deterministically selects the next proposer based on block hash
-// NOTE: можливо треба додати отримання останнього блоку, і списку валідаторів, тому що вони не завжди під рукою
 func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, error) {
 	if len(validators) == 0 {
-		return nil, errors.New("empty validators list")
+		return nil, errors.New("empty validator set")
 	}
 
-	// Calculate total stake
-	totalStake := int64(0)
+	var totalAmount int64
 	for _, v := range validators {
-		totalStake += v.Amount
+		totalAmount += v.Amount
 	}
 
-	if totalStake == 0 {
-		return nil, errors.New("total stake is zero")
+	if totalAmount == 0 {
+		// If total stake is 0, we can just pick the first validator
+		return &validators[0], nil
 	}
 
-	// Use block hash as seed
-	hash := sha256.Sum256(blockHash)
-	seed := binary.BigEndian.Uint64(hash[:8]) // Use first 8 bytes as seed
+	// Use the block hash to deterministically select a proposer
+	seed := sha256.Sum256(blockHash)
+	hashInt := new(big.Int).SetBytes(seed[:])
+	pick := new(big.Int).Mod(hashInt, big.NewInt(totalAmount))
 
-	// Generate deterministic random value between 0 and 1
-	randVal := int64(seed) / math.MaxInt64
-
-	// Select validator based on weighted random selection
-	target := randVal * totalStake
-	current := int64(0)
-
-	for _, v := range validators {
-		current += v.Amount
-		if current >= target {
-			return &v, nil
+	var cumulativeAmount int64
+	for i := range validators {
+		cumulativeAmount += validators[i].Amount
+		if pick.Int64() < cumulativeAmount {
+			return &validators[i], nil
 		}
 	}
 
-	// Fallback to last validator in case of rounding errors
-	return &validators[len(validators)-1], nil
+	// This part should not be reached if logic is correct, but as a fallback
+	return &validators[0], nil
 }
-
-// func SelectNextProposer(prevBlockHash []byte, validators []Validator) (*Validator, error) {
-// 	// FIXME: не може працювати з числами float
-// 	if len(validators) < 1 {
-// 		return &Validator{}, fmt.Errorf("кількість вілідаторів меньше 1")
-// 	}
-// 	seed := sha3.Sum224(prevBlockHash)
-//
-// 	totalStake := uint64(0)
-// 	for _, v := range validators {
-// 		totalStake += uint64(v.Amount)
-// 	}
-//
-// 	// Конвертуємо seed в число
-// 	seedBigInt := new(big.Int).SetBytes(seed[:])
-// 	totalStakeBigInt := big.NewInt(int64(totalStake))
-// 	position := new(big.Int).Mod(seedBigInt, totalStakeBigInt).Uint64()
-//
-// 	// Знаходимо валідатора
-// 	cumulative := uint64(0)
-// 	for i := range validators {
-// 		cumulative += uint64(validators[i].Amount)
-// 		if position < cumulative {
-// 			return &validators[i], nil
-// 		}
-// 	}
-//
-// 	return &validators[len(validators)-1], nil
-// }

@@ -48,9 +48,9 @@ func (n *Node) handleBroadcastMessages() {
 			go n.handleMsgNewTransaction(message.Data)
 		case MsgVote:
 			go n.handleMsgVote(message.Data)
+		default:
+			n.messagesQueue <- message
 		}
-
-		n.messagesQueue <- message
 
 	}
 }

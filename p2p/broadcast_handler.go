@@ -43,6 +43,13 @@ func (n *Node) handleBroadcastMessages() {
 
 		log.Debug().Str("type", string(message.Type)).Msg("отримав повідомлення")
 
+		switch message.Type {
+		case MsgNewTransaction:
+			go n.handleMsgNewTransaction(message.Data)
+		case MsgVote:
+			go n.handleMsgVote(message.Data)
+		}
+
 		n.messagesQueue <- message
 
 	}
@@ -53,12 +60,8 @@ func (n *Node) processBroadcastMessages() {
 		message := <-n.messagesQueue
 
 		switch message.Type {
-		case MsgNewTransaction:
-			n.handleMsgNewTransaction(message.Data)
 		case MsgBlockProposal:
 			n.handleMsgBlockProposal(message.Data)
-		case MsgVote:
-			n.handleMsgVote(message.Data)
 		case MsgCommit:
 			n.handleMsgCommit(message.Data)
 		}

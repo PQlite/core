@@ -15,20 +15,20 @@ import (
 // Читання вхідних повідомлень
 func (n *Node) handleBroadcastMessages() {
 	for {
-		msg, err := n.topic.sub.Next(n.ctx)
+		data, err := n.topic.sub.Next(n.ctx)
 		if err != nil {
 			log.Error().Err(err).Msg("помилка при отриманні повідомлення")
 			continue
 		}
 
 		var message Message
-		err = json.Unmarshal(msg.Data, &message)
+		err = json.Unmarshal(data.Data, &message)
 		if err != nil {
 			log.Error().Err(err).Msg("помилка розпаковки повідомлення")
 			continue
 		}
 
-		if msg.ReceivedFrom == n.host.ID() {
+		if data.ReceivedFrom == n.host.ID() {
 			if message.Type != MsgBlockProposal && message.Type != MsgCommit && message.Type != MsgVote {
 				log.Debug().Msg("повідомлення від себе")
 				continue
@@ -43,15 +43,24 @@ func (n *Node) handleBroadcastMessages() {
 
 		log.Debug().Str("type", string(message.Type)).Msg("отримав повідомлення")
 
+		n.messagesQueue <- message
+
+	}
+}
+
+func (n *Node) processBroadcastMessages() {
+	for {
+		message := <-n.messagesQueue
+
 		switch message.Type {
 		case MsgNewTransaction:
-			go n.handleMsgNewTransaction(message.Data)
+			n.handleMsgNewTransaction(message.Data)
 		case MsgBlockProposal:
-			go n.handleMsgBlockProposal(message.Data)
+			n.handleMsgBlockProposal(message.Data)
 		case MsgVote:
-			go n.handleMsgVote(message.Data)
+			n.handleMsgVote(message.Data)
 		case MsgCommit:
-			go n.handleMsgCommit(message.Data)
+			n.handleMsgCommit(message.Data)
 		}
 	}
 }
@@ -204,7 +213,6 @@ func (n *Node) handleMsgCommit(data []byte) {
 	if err := n.setNextProposer(); err != nil {
 		panic(err)
 	}
-	log.Debug().Hex("proposer", n.nextProposer.Address).Int64("баланс", n.nextProposer.Amount).Msg("наступний proposer")
 
 	// я і є настпуний валідатор!
 	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {

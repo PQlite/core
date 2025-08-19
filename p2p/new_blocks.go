@@ -119,6 +119,7 @@ func (n *Node) setNextProposer() error {
 		return err
 	}
 	n.nextProposer = nextProposer
+	log.Debug().Hex("proposer", n.nextProposer.Address).Int64("баланс", n.nextProposer.Amount).Msg("наступний proposer")
 	return nil
 }
 

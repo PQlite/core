@@ -20,16 +20,17 @@ import (
 )
 
 type Node struct {
-	host         host.Host
-	ctx          context.Context
-	TxCh         chan *chain.Transaction
-	topic        *Topic
-	mempool      *chain.Mempool
-	bs           *database.BlockStorage
-	kdht         *dht.IpfsDHT
-	keys         *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
-	nextProposer chain.Validator
-	vote         chain.VoteCh
+	host          host.Host
+	ctx           context.Context
+	TxCh          chan *chain.Transaction
+	topic         *Topic
+	mempool       *chain.Mempool
+	bs            *database.BlockStorage
+	kdht          *dht.IpfsDHT
+	keys          *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
+	nextProposer  chain.Validator
+	vote          chain.VoteCh
+	messagesQueue chan Message
 }
 
 func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStorage) (Node, error) {
@@ -86,16 +87,17 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 	}
 
 	return Node{
-		host:         node,
-		ctx:          ctx,
-		TxCh:         make(chan *chain.Transaction),
-		topic:        &topic,
-		mempool:      mempool,
-		bs:           bs,
-		kdht:         kdht,
-		keys:         keys,
-		nextProposer: chain.Validator{},
-		vote:         make(chan chain.Vote),
+		host:          node,
+		ctx:           ctx,
+		TxCh:          make(chan *chain.Transaction),
+		topic:         &topic,
+		mempool:       mempool,
+		bs:            bs,
+		kdht:          kdht,
+		keys:          keys,
+		nextProposer:  chain.Validator{},
+		vote:          make(chan chain.Vote),
+		messagesQueue: make(chan Message),
 	}, nil
 }
 
@@ -107,6 +109,7 @@ func (n *Node) Start() {
 
 	// Handlers
 	go n.handleBroadcastMessages()
+	go n.processBroadcastMessages()
 	go n.handleTxCh()
 	go n.host.SetStreamHandler(directProtocol, n.handleStreamMessages)
 

@@ -14,6 +14,7 @@ import (
 
 // Читання вхідних повідомлень
 func (n *Node) handleBroadcastMessages() {
+	go n.processBlockProposalCommit()
 	for {
 		data, err := n.topic.sub.Next(n.ctx)
 		if err != nil {
@@ -55,7 +56,7 @@ func (n *Node) handleBroadcastMessages() {
 	}
 }
 
-func (n *Node) processBroadcastMessages() {
+func (n *Node) processBlockProposalCommit() {
 	for {
 		message := <-n.messagesQueue
 

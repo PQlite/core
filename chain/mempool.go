@@ -12,7 +12,7 @@ import (
 
 type Mempool struct {
 	mu  sync.Mutex
-	TXs []*Transaction
+	TXs []*Transaction // NOTE: я маю список посилань на транзакції, а не посилання на список
 }
 
 func (m *Mempool) Add(tx *Transaction) error {

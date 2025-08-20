@@ -34,7 +34,13 @@ func (n *Node) createNewBlock() chain.Block {
 	}
 
 	log.Info().Msg("очікування транзакцій для нового блоку")
-	for n.mempool.Len() < 1 {
+
+	// очікування транзакцій для блоку
+	for {
+		n.mempool.TXs = n.getOnlyValidTransaction(n.mempool.TXs)
+		if n.mempool.Len() > 0 {
+			break
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -123,28 +129,46 @@ func (n *Node) setNextProposer() error {
 	return nil
 }
 
-func (n *Node) checkBalances(txs []*chain.Transaction) error {
-	for _, tx := range txs {
-		// Перевірка транзакції нагороди
-		if bytes.Equal(tx.From, []byte(REWARDWALLET)) {
-			if tx.Amount == REWARD {
-				continue
-			}
+func (n *Node) validateTx(tx *chain.Transaction) error {
+	// Перевірка транзакції нагороди
+	if bytes.Equal(tx.From, []byte(REWARDWALLET)) {
+		if tx.Amount != REWARD {
 			return fmt.Errorf("транзакція нагороди має не правельну нагороду")
 		}
+		return nil
+	}
 
-		wallet, err := n.bs.GetWalletByAddress(tx.From)
-		if err != nil {
-			return fmt.Errorf("помилка отримання даних про гаманець: %w", err)
-		}
+	wallet, err := n.bs.GetWalletByAddress(tx.From)
+	if err != nil {
+		return fmt.Errorf("помилка отримання даних про гаманець: %w", err)
+	}
 
-		// Не вистачає балансу
-		if wallet.Balance < tx.Amount {
-			return fmt.Errorf("гаманець не має достатньої кількість грошей для переказу")
+	// Не вистачає балансу
+	if wallet.Balance < tx.Amount {
+		return fmt.Errorf("гаманець не має достатньої кількість грошей для переказу")
+	}
+	// Nonce не правельний
+	if tx.Nonce != wallet.Nonce+1 {
+		return fmt.Errorf("транзакція має не правельний Nonce: %d, коли Nonce гаманця це: %d", tx.Nonce, wallet.Nonce)
+	}
+
+	return nil
+}
+
+func (n *Node) getOnlyValidTransaction(txs []*chain.Transaction) []*chain.Transaction {
+	validTxs := make([]*chain.Transaction, 0, len(txs))
+	for _, tx := range txs {
+		if err := n.validateTx(tx); err == nil {
+			validTxs = append(validTxs, tx)
 		}
-		// Nonce не правельний
-		if tx.Nonce != wallet.Nonce+1 {
-			return fmt.Errorf("транзакція має не правельний Nonce: %d, коли Nonce гаманця це: %d", tx.Nonce, wallet.Nonce)
+	}
+	return validTxs
+}
+
+func (n *Node) checkBalances(txs []*chain.Transaction) error {
+	for _, tx := range txs {
+		if err := n.validateTx(tx); err != nil {
+			return err
 		}
 	}
 	return nil

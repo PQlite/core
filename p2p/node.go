@@ -109,7 +109,6 @@ func (n *Node) Start() {
 
 	// Handlers
 	go n.handleBroadcastMessages()
-	go n.processBroadcastMessages()
 	go n.handleTxCh()
 	go n.host.SetStreamHandler(directProtocol, n.handleStreamMessages)
 

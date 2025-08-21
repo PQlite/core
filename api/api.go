@@ -67,6 +67,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/txs", s.handleGetMempoolLen)
 	s.app.Get("/blocks", s.handleGetAllBlocks)
 	s.app.Get("/addr/:id", s.handleGetBalance)
+	s.app.Get("/lastBlock", s.handleGetLastBlock)
 	s.app.Post("/tx", s.handlePostTx)
 
 	// щоб сервер не відповідав усіляким підораскам
@@ -165,6 +166,16 @@ func (s *Server) handleGetBalance(c *fiber.Ctx) error {
 		})
 	}
 	return c.Status(200).JSON(wallet)
+}
+
+func (s *Server) handleGetLastBlock(c *fiber.Ctx) error {
+	lastBlock, err := s.bs.GetLastBlock()
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{
+			"error": err,
+		})
+	}
+	return c.JSON(lastBlock)
 }
 
 // Start запускає HTTP-сервер.

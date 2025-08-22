@@ -146,7 +146,7 @@ func CreateGenesisBlock() (Block, Validator, Wallet) {
 	}
 	wallet := Wallet{
 		Address: pubBytes,
-		Balance: 10,
+		Balance: 100000000,
 		Nonce:   2,
 	}
 	return b, val, wallet

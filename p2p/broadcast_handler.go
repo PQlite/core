@@ -148,7 +148,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		}
 
 		// NOTE: для релізу погано, але зараз ок
-		if stakeAmount == accceptedAmount { // 100%
+		if (stakeAmount / 2) < accceptedAmount { // >50%
 			break
 		}
 	}

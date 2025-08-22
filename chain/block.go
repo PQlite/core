@@ -131,7 +131,7 @@ func CreateGenesisBlock() (Block, Validator, Wallet) {
 	balanceTx := Transaction{
 		From:      []byte("reward"),
 		To:        pubBytes,
-		Amount:    10,
+		Amount:    100000000,
 		Timestamp: 0,
 		Nonce:     2,
 	}

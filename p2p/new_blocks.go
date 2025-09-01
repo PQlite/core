@@ -238,3 +238,18 @@ func (n *Node) addValidatorsToDB(block *chain.Block) error {
 	}
 	return nil
 }
+
+func (n *Node) deleteValidatorsFromDB(block *chain.Block) error {
+	for _, tx := range block.Transactions {
+		if bytes.Equal(tx.From, []byte("unstake")) {
+			validator, err := n.bs.GetValidator(tx.To)
+			if err != nil {
+				panic(err)
+				return err
+			}
+
+			n.bs.DeleteValidator(validator)
+		}
+	}
+	return nil
+}

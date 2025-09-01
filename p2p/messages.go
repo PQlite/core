@@ -27,6 +27,7 @@ const (
 	MsgBlockProposal MessageType = "blockProposal"
 	MsgVote          MessageType = "vote"
 	MsgCommit        MessageType = "commit"
+	MsgReject        MessageType = "reject"
 
 	// Валідатори
 	MsgValidatorSet    MessageType = "validatorSet"

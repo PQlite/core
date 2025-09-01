@@ -169,7 +169,7 @@ func (n *Node) peerDiscovery() {
 				log.Fatal().Err(err).Msg("помилка пошуку пірів")
 			}
 
-			for p := range peerChan { // FIXME: помилка після 2 ping
+			for p := range peerChan {
 				if p.ID != n.host.ID() {
 					ch := ping.Ping(n.ctx, n.host, p.ID)
 					res := <-ch

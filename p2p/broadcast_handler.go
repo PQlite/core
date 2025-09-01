@@ -49,7 +49,7 @@ func (n *Node) handleBroadcastMessages() {
 			go n.handleMsgNewTransaction(message.Data)
 		case MsgVote:
 			go n.handleMsgVote(message.Data)
-		default:
+		default: // NOTE: ну тут гача якась
 			n.messagesQueue <- message
 		}
 
@@ -65,6 +65,8 @@ func (n *Node) processBlockProposalCommit() {
 			n.handleMsgBlockProposal(message.Data)
 		case MsgCommit:
 			n.handleMsgCommit(message.Data)
+		case MsgReject:
+			n.handleMsgReject()
 		}
 	}
 }
@@ -202,11 +204,15 @@ func (n *Node) handleMsgCommit(data []byte) {
 	if err := n.bs.SaveBlock(&commit.Block); err != nil {
 		panic(err)
 	}
-	log.Info().Hex("block hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("додано новий блок до лонцюжка")
+	log.Info().Hex("block hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("додано новий блок до ланцюжка")
 
 	go n.mempool.ClearMempool(commit.Block.Transactions)
 
 	if err := n.addValidatorsToDB(&commit.Block); err != nil {
+		panic(err)
+	}
+
+	if err := n.deleteValidatorsFromDB(&commit.Block); err != nil {
 		panic(err)
 	}
 
@@ -231,6 +237,21 @@ func (n *Node) handleMsgCommit(data []byte) {
 	}
 }
 
+func (n *Node) handleMsgReject() {
+	validator, err := n.bs.GetValidator(n.nextProposer.Address)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := n.bs.DeleteValidator(validator); err != nil {
+		panic(err)
+	}
+
+	if err := n.setNextProposer(); err != nil {
+		panic(err)
+	}
+}
+
 func drainChannel[T any](ch chan T) {
 	for {
 		select {
@@ -250,4 +271,38 @@ func containsInValidators(pub []byte, validators *[]chain.Validator) (bool, *cha
 		}
 	}
 	return false, nil
+}
+
+func (n *Node) blocksStopWatch() {
+	lastBlock, err := n.bs.GetLastBlock()
+	if err != nil {
+		panic(err)
+	}
+	for {
+		// 20 sec
+		if lastBlock.Timestamp+20000 > time.Now().UnixMilli() {
+			msg := Message{
+				Type:      MsgReject,
+				Timestamp: time.Now().UnixMilli(),
+				Data:      []byte(""),
+				Pub:       n.keys.Pub,
+			}
+			if err := msg.sign(n.keys.Priv); err != nil {
+				panic(err)
+			}
+			if err := n.topic.broadcast(&msg, n.ctx); err != nil {
+				panic(err)
+			}
+			return
+		}
+		updatedLastBlock, err := n.bs.GetLastBlock()
+		if err != nil {
+			panic(err)
+		}
+		if bytes.Equal(updatedLastBlock.Hash, lastBlock.Hash) {
+			// якщо hash різний, то новий блок вже було отримано
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
 }

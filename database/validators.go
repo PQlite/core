@@ -22,6 +22,20 @@ func (bs *BlockStorage) AddValidator(validator *chain.Validator) error {
 	return txn.Commit()
 }
 
+func (bs *BlockStorage) DeleteValidator(validator *chain.Validator) error {
+	txn := bs.db.NewTransaction(true)
+	defer txn.Discard()
+
+	key := getValidatorKey(validator.Address)
+
+	err := txn.Delete(key)
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
 func (bs *BlockStorage) GetValidatorsList() (*[]chain.Validator, error) {
 	var res []chain.Validator
 

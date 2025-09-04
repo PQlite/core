@@ -235,7 +235,6 @@ func (n *Node) handleMsgCommit(data []byte) {
 			log.Error().Err(err).Msg("помилка трансляції нового блоку")
 		}
 	}
-	go n.blocksStopWatch() // NOTE: це не найкраще рішення, тому що воно може пропустити тільки одного виробника блоків
 }
 
 func (n *Node) handleMsgReject() {
@@ -272,38 +271,4 @@ func containsInValidators(pub []byte, validators *[]chain.Validator) (bool, *cha
 		}
 	}
 	return false, nil
-}
-
-func (n *Node) blocksStopWatch() {
-	lastBlock, err := n.bs.GetLastBlock()
-	if err != nil {
-		panic(err)
-	}
-	for {
-		// 20 sec
-		if lastBlock.Timestamp+20000 > time.Now().UnixMilli() {
-			msg := Message{
-				Type:      MsgReject,
-				Timestamp: time.Now().UnixMilli(),
-				Data:      []byte(""),
-				Pub:       n.keys.Pub,
-			}
-			if err := msg.sign(n.keys.Priv); err != nil {
-				panic(err)
-			}
-			if err := n.topic.broadcast(&msg, n.ctx); err != nil {
-				panic(err)
-			}
-			return
-		}
-		updatedLastBlock, err := n.bs.GetLastBlock()
-		if err != nil {
-			panic(err)
-		}
-		if bytes.Equal(updatedLastBlock.Hash, lastBlock.Hash) {
-			// якщо hash різний, то новий блок вже було отримано
-			return
-		}
-		time.Sleep(1 * time.Second)
-	}
 }

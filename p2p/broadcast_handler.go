@@ -235,6 +235,7 @@ func (n *Node) handleMsgCommit(data []byte) {
 			log.Error().Err(err).Msg("помилка трансляції нового блоку")
 		}
 	}
+	go n.blocksStopWatch() // NOTE: це не найкраще рішення, тому що воно може пропустити тільки одного виробника блоків
 }
 
 func (n *Node) handleMsgReject() {

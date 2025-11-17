@@ -8,6 +8,7 @@ import (
 	"crypto/sha3"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"sort"
 
 	"github.com/PQlite/crypto"
@@ -63,22 +64,24 @@ func (b *Block) GenerateHash() error {
 }
 
 func (b *Block) Verify() error {
-	// TODO: додати перевірку hash
-	// NOTE: можна зробити і краще
-	//       скопіювати b і видалити hash, signature
-	blockForVerify := Block{
-		Height:       b.Height,
-		Timestamp:    b.Timestamp,
-		PrevHash:     b.PrevHash,
-		Proposer:     b.Proposer,
-		Transactions: b.Transactions,
-	}
+	blockForVerify := *b
+	blockForVerify.Signature = nil
+	blockForVerify.Hash = nil
 
 	blockForVerify.sortTransactions()
 
+	if err := blockForVerify.GenerateHash(); err != nil {
+		log.Error().Err(err).Msg("помилка генерації hash`у блоку")
+		return err
+	}
+	if !bytes.Equal(b.Hash, blockForVerify.Hash) {
+		log.Error().Hex("local hash", blockForVerify.Hash).Hex("out hash", b.Hash).Msg("hash перевірочногу блоку не збігаєтся")
+		return fmt.Errorf("hash`s не збігаются")
+	}
+
 	binBlockForVerify, err := json.Marshal(blockForVerify)
 	if err != nil {
-		log.Error().Err(err).Msg("помилка json.Marshal в verify")
+		log.Error().Err(err).Msg("помилка json.Marshal в verify блоку")
 		return err
 	}
 

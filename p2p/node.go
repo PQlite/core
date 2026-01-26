@@ -116,7 +116,9 @@ func (n *Node) Start() {
 
 	<-n.ctx.Done()
 	log.Info().Msg("отримано команду зупинки в Node")
-	n.host.Close()
+	if err := n.host.Close(); err != nil {
+		panic(err)
+	}
 }
 
 // TODO: треба перевіряти баланси і nonce перед додаванням, або перевіряти їх перед тим, як додати в блок
@@ -141,13 +143,14 @@ func (n *Node) handleTxCh() {
 					Data:      txBytes,
 					Pub:       n.keys.Pub,
 				}
-				err = m.sign(n.keys.Priv)
-				if err != nil {
+				if err = m.sign(n.keys.Priv); err != nil {
 					log.Error().Err(err).Msg("sing error")
 					continue
 				}
 
-				n.topic.broadcast(&m, n.ctx)
+				if err = n.topic.broadcast(&m, n.ctx); err != nil {
+					panic(err)
+				}
 			}
 		case <-n.ctx.Done():
 			return

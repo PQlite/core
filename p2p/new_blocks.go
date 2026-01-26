@@ -60,7 +60,9 @@ func (n *Node) createNewBlock() chain.Block {
 		log.Fatal().Err(err).Msg("помилка підпису блоку")
 	}
 
-	block.GenerateHash()
+	if err = block.GenerateHash(); err != nil {
+		log.Fatal().Err(err).Msg("помилка створення хешу блоку")
+	}
 
 	return block
 }
@@ -185,7 +187,9 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 			}
 			walletTo.Balance += tx.Amount
 			walletTo.Nonce++
-			n.bs.UpdateBalance(&walletTo)
+			if err = n.bs.UpdateBalance(&walletTo); err != nil {
+				log.Fatal().Err(err).Str("wallet", string(walletTo.Address)).Msg("помилка оновлення балансу гаманця")
+			}
 			continue
 		}
 		walletFrom, err := n.bs.GetWalletByAddress(tx.From)
@@ -245,10 +249,11 @@ func (n *Node) deleteValidatorsFromDB(block *chain.Block) error {
 			validator, err := n.bs.GetValidator(tx.To)
 			if err != nil {
 				panic(err)
-				return err
 			}
 
-			n.bs.DeleteValidator(validator)
+			if err = n.bs.DeleteValidator(validator); err != nil {
+				panic(err)
+			}
 		}
 	}
 	return nil

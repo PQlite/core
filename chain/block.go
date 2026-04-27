@@ -36,11 +36,12 @@ func (b *Block) sortTransactions() {
 func (b *Block) Sign(binPriv []byte) error {
 	b.sortTransactions()
 
-	BlockForSignBytes, err := json.Marshal(*b)
-	if err != nil {
+	if err := b.GenerateHash(); err != nil {
 		return err
 	}
-	sig, err := crypto.Sign(binPriv, BlockForSignBytes)
+
+	// Підписуємо хеш блоку, а не весь JSON
+	sig, err := crypto.Sign(binPriv, b.Hash)
 	if err != nil {
 		return err
 	}
@@ -64,28 +65,26 @@ func (b *Block) GenerateHash() error {
 }
 
 func (b *Block) Verify() error {
+	// Створюємо копію для перевірки хешу
 	blockForVerify := *b
 	blockForVerify.Signature = nil
 	blockForVerify.Hash = nil
 
 	blockForVerify.sortTransactions()
 
+	// Генеруємо хеш для порівняння
 	if err := blockForVerify.GenerateHash(); err != nil {
 		log.Error().Err(err).Msg("помилка генерації hash`у блоку")
 		return err
 	}
+
 	if !bytes.Equal(b.Hash, blockForVerify.Hash) {
-		log.Error().Hex("local hash", blockForVerify.Hash).Hex("out hash", b.Hash).Msg("hash перевірочногу блоку не збігаєтся")
-		return fmt.Errorf("hash`s не збігаются")
+		log.Error().Hex("local hash", blockForVerify.Hash).Hex("out hash", b.Hash).Msg("hash перевірочного блоку не збігається")
+		return fmt.Errorf("hash`s не збігаються")
 	}
 
-	binBlockForVerify, err := json.Marshal(blockForVerify)
-	if err != nil {
-		log.Error().Err(err).Msg("помилка json.Marshal в verify блоку")
-		return err
-	}
-
-	if err = crypto.Verify(b.Proposer, binBlockForVerify, b.Signature); err != nil {
+	// Перевіряємо підпис, який було накладено на хеш
+	if err = crypto.Verify(b.Proposer, b.Hash, b.Signature); err != nil {
 		log.Error().Err(err).Msg("помилка перевірки підпису блоку")
 		return err
 	}
@@ -98,7 +97,7 @@ func (b *Block) VerifyTransactions() error {
 	for _, tx := range b.Transactions {
 		err := tx.Verify()
 		if err != nil {
-			log.Error().Err(err).Msg("помилка перевірки підписку транзакцій")
+			log.Error().Err(err).Msg("помилка перевірки підпису транзакції")
 			return err
 		}
 
@@ -107,9 +106,26 @@ func (b *Block) VerifyTransactions() error {
 }
 
 func (b *Block) MarshalDeterministic() ([]byte, error) {
+	// Для хешування нам потрібні всі дані блоку КРІМ Hash та Signature
+	type BlockForHashing struct {
+		Height       uint32
+		Timestamp    int64
+		PrevHash     []byte
+		Proposer     []byte
+		Transactions []*Transaction
+	}
+
 	b.sortTransactions()
 
-	res, err := json.Marshal(b)
+	data := BlockForHashing{
+		Height:       b.Height,
+		Timestamp:    b.Timestamp,
+		PrevHash:     b.PrevHash,
+		Proposer:     b.Proposer,
+		Transactions: b.Transactions,
+	}
+
+	res, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
 	}

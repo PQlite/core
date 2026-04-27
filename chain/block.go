@@ -84,7 +84,7 @@ func (b *Block) Verify() error {
 	}
 
 	// Перевіряємо підпис, який було накладено на хеш
-	if err = crypto.Verify(b.Proposer, b.Hash, b.Signature); err != nil {
+	if err := crypto.Verify(b.Proposer, b.Hash, b.Signature); err != nil {
 		log.Error().Err(err).Msg("помилка перевірки підпису блоку")
 		return err
 	}

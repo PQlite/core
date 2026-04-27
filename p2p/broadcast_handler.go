@@ -12,9 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Читання вхідних повідомлень
 func (n *Node) handleBroadcastMessages() {
-	// NOTE: знаю, але вже так як є. треба робити адекватно, але потім
 	go n.processBlockProposalCommit()
 	for {
 		data, err := n.topic.sub.Next(n.ctx)
@@ -24,8 +22,7 @@ func (n *Node) handleBroadcastMessages() {
 		}
 
 		var message Message
-		err = json.Unmarshal(data.Data, &message)
-		if err != nil {
+		if err = json.Unmarshal(data.Data, &message); err != nil {
 			log.Error().Err(err).Msg("помилка розпаковки повідомлення")
 			continue
 		}
@@ -50,10 +47,9 @@ func (n *Node) handleBroadcastMessages() {
 			go n.handleMsgNewTransaction(message.Data)
 		case MsgVote:
 			go n.handleMsgVote(message.Data)
-		default: // NOTE: ну тут гача якась
+		default:
 			n.messagesQueue <- message
 		}
-
 	}
 }
 
@@ -74,23 +70,21 @@ func (n *Node) processBlockProposalCommit() {
 
 func (n *Node) handleMsgNewTransaction(data []byte) {
 	var tx chain.Transaction
-	err := json.Unmarshal(data, &tx)
-	if err != nil {
+	if err := json.Unmarshal(data, &tx); err != nil {
 		log.Error().Err(err).Msg("помилка розпаковки транзакції")
 		return
 	}
 
 	log.Info().Int64("latency", time.Now().UnixMilli()-tx.Timestamp).Msg("отримано транзакцію")
 
-	if err = n.mempool.Add(&tx); err != nil {
-		log.Warn().Err(err).Msg("отрмана транзакція не була додана до mempool")
+	if err := n.mempool.Add(&tx); err != nil {
+		log.Warn().Err(err).Msg("отримана транзакція не була додана до mempool")
 	}
 }
 
 func (n *Node) handleMsgBlockProposal(data []byte) {
 	var block chain.Block
-	err := json.Unmarshal(data, &block)
-	if err != nil {
+	if err := json.Unmarshal(data, &block); err != nil {
 		log.Error().Err(err).Msg("помилка розпаковки blockProposal")
 		return
 	}
@@ -106,63 +100,70 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		return
 	}
 
-	msg, err := n.getVoteMsg(blockBytes)
+	voteMsg, err := n.getVoteMsg(blockBytes)
 	if err != nil {
 		log.Error().Err(err).Msg("помилка створення повідомлення для голосування")
 		return
 	}
 
-	if err = n.topic.broadcast(msg, n.ctx); err != nil {
+	if err = n.topic.broadcast(voteMsg, n.ctx); err != nil {
 		log.Error().Err(err).Msg("помилка розсилання повідомлення голосування")
 		return
 	}
 
-	// якщо це не я роблю блок
+	// якщо це не я роблю блок — далі не йдемо
 	if !bytes.Equal(block.Proposer, n.keys.Pub) {
 		return
 	}
 
-	// OPTIMIZE: я думаю зробити список, в якому будуть ставитись галочки чи щось таке
-	// TODO: додати обробку сценарію, коли не проголосували в достатній кількості
-	var votersList []chain.Vote
 	allValidators, err := n.bs.GetValidatorsList()
 	if err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка отримання списку валідаторів")
+		return
 	}
 
-	var accceptedAmount int64
 	var stakeAmount int64
-	for _, validator := range *allValidators {
-		stakeAmount += validator.Amount
+	for _, v := range *allValidators {
+		stakeAmount += v.Amount
 	}
 
+	var votersList []chain.Vote
+	var acceptedAmount int64
+
+	timeout := time.NewTimer(30 * time.Second)
+	defer timeout.Stop()
+
+collectVotes:
 	for {
-		v := <-n.vote
-		if err = crypto.Verify(v.Pub, blockBytes, v.Signature); err != nil {
-			log.Info().Msg("голос не є вілідним")
-			continue
-		}
-
-		contais, validator := containsInValidators(v.Pub, allValidators)
-		if contais {
-			accceptedAmount += validator.Amount
-
-			votersList = append(votersList, v)
-		}
-
-		// NOTE: для релізу погано, але зараз ок
-		if (stakeAmount / 2) < accceptedAmount { // >50%
-			break
+		select {
+		case v := <-n.vote:
+			if err = crypto.Verify(v.Pub, blockBytes, v.Signature); err != nil {
+				log.Info().Msg("голос не є валідним")
+				continue
+			}
+			contains, validator := containsInValidators(v.Pub, allValidators)
+			if contains {
+				acceptedAmount += validator.Amount
+				votersList = append(votersList, v)
+			}
+			if (stakeAmount / 2) < acceptedAmount {
+				break collectVotes
+			}
+		case <-timeout.C:
+			log.Warn().Int64("зібрано", acceptedAmount).Int64("потрібно", stakeAmount/2+1).Msg("timeout очікування голосів — недостатньо голосів")
+			return
 		}
 	}
 
 	commitMsg, err := n.getCommitMsg(&votersList, &block)
 	if err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка створення commit повідомлення")
+		return
 	}
 
 	if err = n.topic.broadcast(commitMsg, n.ctx); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка відправки commit повідомлення")
+		return
 	}
 	log.Debug().Msg("повідомлення commit відправлено")
 }
@@ -170,10 +171,15 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 func (n *Node) handleMsgVote(data []byte) {
 	var vote chain.Vote
 	if err := json.Unmarshal(data, &vote); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка розпаковки vote повідомлення")
+		return
 	}
-	log.Debug().Hex("від", vote.Pub).Msg("отримано повідомлення  vote")
-	n.vote <- vote
+	log.Debug().Hex("від", vote.Pub).Msg("отримано повідомлення vote")
+	select {
+	case n.vote <- vote:
+	default:
+		log.Warn().Msg("vote channel повний, голос відкинуто")
+	}
 }
 
 func (n *Node) handleMsgCommit(data []byte) {
@@ -181,55 +187,73 @@ func (n *Node) handleMsgCommit(data []byte) {
 
 	var commit Commit
 	if err := json.Unmarshal(data, &commit); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка розпаковки commit повідомлення")
+		return
 	}
 
-	// TODO: перевірити дані з commit
 	allValidators, err := n.bs.GetValidatorsList()
 	if err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка отримання списку валідаторів")
+		return
 	}
+
+	var totalStake int64
+	for _, v := range *allValidators {
+		totalStake += v.Amount
+	}
+
+	var acceptedStake int64
 	for _, v := range commit.Voters {
 		if err := v.Verify(&commit.Block); err != nil {
 			log.Error().Hex("voter", v.Pub).Msg("помилка підтвердження підпису голосу")
 			return
 		}
-
-		contains, _ := containsInValidators(v.Pub, allValidators)
+		contains, validator := containsInValidators(v.Pub, allValidators)
 		if !contains {
 			log.Error().Hex("voter", v.Pub).Msg("голос не був в списку валідаторів")
 			return
 		}
+		acceptedStake += validator.Amount
+	}
+
+	if (totalStake / 2) >= acceptedStake {
+		log.Error().Int64("зібрано", acceptedStake).Int64("потрібно", totalStake/2+1).Msg("commit не має достатньої кількості голосів")
+		return
 	}
 
 	if err := n.bs.SaveBlock(&commit.Block); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка збереження блоку")
+		return
 	}
 	log.Info().Hex("block hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("додано новий блок до ланцюжка")
 
 	go n.mempool.ClearMempool(commit.Block.Transactions)
 
 	if err := n.addValidatorsToDB(&commit.Block); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка додавання валідаторів до БД")
+		return
 	}
 
 	if err := n.deleteValidatorsFromDB(&commit.Block); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка видалення валідаторів з БД")
+		return
 	}
 
 	if err := n.updateBalancesNonces(&commit.Block); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка оновлення балансів/nonce")
+		return
 	}
 
 	if err := n.setNextProposer(); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка вибору наступного proposer")
+		return
 	}
 
-	// я і є настпуний валідатор!
 	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
 		blockProposalMsg, err := n.getMsgBlockProposalMsg()
 		if err != nil {
-			panic(err)
+			log.Error().Err(err).Msg("помилка створення block proposal")
+			return
 		}
 
 		if err = n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
@@ -241,15 +265,17 @@ func (n *Node) handleMsgCommit(data []byte) {
 func (n *Node) handleMsgReject() {
 	validator, err := n.bs.GetValidator(n.nextProposer.Address)
 	if err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка отримання валідатора при reject")
+		return
 	}
 
 	if err := n.bs.DeleteValidator(validator); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка видалення валідатора при reject")
+		return
 	}
 
 	if err := n.setNextProposer(); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка вибору наступного proposer після reject")
 	}
 }
 
@@ -257,9 +283,7 @@ func drainChannel[T any](ch chan T) {
 	for {
 		select {
 		case <-ch:
-			// просто читаємо і відкидаємо значення
 		default:
-			// канал порожній - виходимо
 			return
 		}
 	}

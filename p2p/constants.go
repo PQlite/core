@@ -14,6 +14,6 @@ const (
 )
 
 var BOOTSTRAPLIST = [2]string{
-	"/ip6/2603:c020:8020:57e:0:8a60:c2f8:951d /tcp/4003/p2p/12D3KooWFkERhFKsJeeH1Dhy4CkiA7GdvkBcYZ8LZNkxxF1yJNoR",
+	"/ip6/2603:c020:8020:57e:0:8a60:c2f8:951d/tcp/4003/p2p/12D3KooWFkERhFKsJeeH1Dhy4CkiA7GdvkBcYZ8LZNkxxF1yJNoR",
 	"/ip4/130.162.221.205/tcp/4003/p2p/12D3KooWFkERhFKsJeeH1Dhy4CkiA7GdvkBcYZ8LZNkxxF1yJNoR",
 }

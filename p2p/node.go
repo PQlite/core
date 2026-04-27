@@ -96,7 +96,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		kdht:          kdht,
 		keys:          keys,
 		nextProposer:  chain.Validator{},
-		vote:          make(chan chain.Vote),
+		vote:          make(chan chain.Vote, 100),
 		messagesQueue: make(chan Message),
 	}, nil
 }
@@ -117,7 +117,7 @@ func (n *Node) Start() {
 	<-n.ctx.Done()
 	log.Info().Msg("отримано команду зупинки в Node")
 	if err := n.host.Close(); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка закриття p2p host")
 	}
 }
 
@@ -149,7 +149,8 @@ func (n *Node) handleTxCh() {
 				}
 
 				if err = n.topic.broadcast(&m, n.ctx); err != nil {
-					panic(err)
+					log.Error().Err(err).Msg("помилка broadcast транзакції")
+					continue
 				}
 			}
 		case <-n.ctx.Done():
@@ -192,6 +193,7 @@ func (n *Node) connectingToBootstrap() {
 		pi, err := peer.AddrInfoFromString(addr)
 		if err != nil {
 			log.Error().Err(err).Str("address", addr).Msg("помилка отримання адреси bootstrap")
+			continue
 		}
 		err = n.host.Connect(n.ctx, *pi)
 		if err != nil {

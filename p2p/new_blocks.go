@@ -27,15 +27,14 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 	return *nextProposer, nil
 }
 
-func (n *Node) createNewBlock() chain.Block {
+func (n *Node) createNewBlock() (chain.Block, error) {
 	lastBlock, err := n.bs.GetLastBlock()
 	if err != nil {
-		log.Fatal().Err(err).Msg("помилка отримання останнього блоку")
+		return chain.Block{}, fmt.Errorf("помилка отримання останнього блоку: %w", err)
 	}
 
 	log.Info().Msg("очікування транзакцій для нового блоку")
 
-	// очікування транзакцій для блоку
 	for {
 		n.mempool.TXs = n.getOnlyValidTransaction(n.mempool.TXs)
 		if n.mempool.Len() > 0 {
@@ -54,20 +53,22 @@ func (n *Node) createNewBlock() chain.Block {
 		Transactions: n.mempool.TXs,
 	}
 
-	n.addRewardTx(&block)
+	if err = n.addRewardTx(&block); err != nil {
+		return chain.Block{}, err
+	}
 
 	if err = block.Sign(n.keys.Priv); err != nil {
-		log.Fatal().Err(err).Msg("помилка підпису блоку")
+		return chain.Block{}, fmt.Errorf("помилка підпису блоку: %w", err)
 	}
 
 	if err = block.GenerateHash(); err != nil {
-		log.Fatal().Err(err).Msg("помилка створення хешу блоку")
+		return chain.Block{}, fmt.Errorf("помилка генерації хешу блоку: %w", err)
 	}
 
-	return block
+	return block, nil
 }
 
-func (n *Node) addRewardTx(b *chain.Block) {
+func (n *Node) addRewardTx(b *chain.Block) error {
 	tx := chain.Transaction{
 		From:      []byte(REWARDWALLET),
 		To:        n.keys.Pub,
@@ -76,44 +77,39 @@ func (n *Node) addRewardTx(b *chain.Block) {
 		Nonce:     0,
 	}
 
-	err := tx.Sign(n.keys.Priv)
-	if err != nil {
-		log.Fatal().Err(err).Msg("помилка підпису транзакції")
+	if err := tx.Sign(n.keys.Priv); err != nil {
+		return fmt.Errorf("помилка підпису reward транзакції: %w", err)
 	}
 
 	b.Transactions = append(b.Transactions, &tx)
+	return nil
 }
 
 func (n *Node) fullBlockVerefication(block *chain.Block) error {
-	// Чи правельний творець блоку
 	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
 		log.Error().Hex("творець блоку", block.Proposer).Hex("хто повинен робити блок", n.nextProposer.Address).Msg("творець блоку і той, хто повинен робити блок, не збігаются")
-		return fmt.Errorf("err")
+		return fmt.Errorf("невірний proposer")
 	}
-	// чи правельна висота блоку який був отриманий (на один більше попереднього)
 	lastLocalBlock, err := n.bs.GetLastBlock()
 	if err != nil {
 		log.Error().Err(err).Msg("помилка отримання крайнього блоку з бази даних")
 		return err
 	}
 	if lastLocalBlock.Height+1 != block.Height {
-		log.Error().Uint32("локальний блоку", lastLocalBlock.Height).Uint32("отриманий блоку", block.Height).Hex("hash отриманого блоку", block.Hash).Hex("hash локального блоку", lastLocalBlock.Hash).Msg("висота отриманого блоку і очікувана висота не збігаются")
+		log.Error().Uint32("локальний блок", lastLocalBlock.Height).Uint32("отриманий блок", block.Height).Hex("hash отриманого блоку", block.Hash).Msg("висота блоків не збігається")
 		n.syncBlockchain()
-		return fmt.Errorf("err")
+		return fmt.Errorf("невірна висота блоку")
 	}
-	// Перевірка підпису і hash`у
 	if err := block.Verify(); err != nil {
 		log.Error().Err(err).Hex("proposer", block.Proposer).Msg("валідація підпису блоку не пройшла")
-		return fmt.Errorf("err")
+		return fmt.Errorf("невірний підпис блоку")
 	}
-	// Перевірка підпису усіх транзакцій
 	if err := block.VerifyTransactions(); err != nil {
-		log.Error().Err(err).Msg("верефікаця транзакцій блоку не пройшла")
+		log.Error().Err(err).Msg("верифікація транзакцій блоку не пройшла")
 		return err
 	}
-	// Перевірка балансів і Nonce`ів усіх транзакцій
 	if err := n.checkBalances(block.Transactions); err != nil {
-		log.Error().Err(err).Msg("помилка перевірки бланасів/nonce транзакцій")
+		log.Error().Err(err).Msg("помилка перевірки балансів/nonce транзакцій")
 		return err
 	}
 
@@ -132,10 +128,9 @@ func (n *Node) setNextProposer() error {
 }
 
 func (n *Node) validateTx(tx *chain.Transaction) error {
-	// Перевірка транзакції нагороди
 	if bytes.Equal(tx.From, []byte(REWARDWALLET)) {
 		if tx.Amount != REWARD {
-			return fmt.Errorf("транзакція нагороди має не правельну нагороду")
+			return fmt.Errorf("транзакція нагороди має неправильну суму")
 		}
 		return nil
 	}
@@ -145,13 +140,11 @@ func (n *Node) validateTx(tx *chain.Transaction) error {
 		return fmt.Errorf("помилка отримання даних про гаманець: %w", err)
 	}
 
-	// Не вистачає балансу
 	if wallet.Balance < tx.Amount {
-		return fmt.Errorf("гаманець не має достатньої кількість грошей для переказу")
+		return fmt.Errorf("недостатній баланс для переказу")
 	}
-	// Nonce не правельний
 	if tx.Nonce != wallet.Nonce+1 {
-		return fmt.Errorf("транзакція має не правельний Nonce: %d, коли Nonce гаманця це: %d", tx.Nonce, wallet.Nonce)
+		return fmt.Errorf("невірний Nonce транзакції: %d, Nonce гаманця: %d", tx.Nonce, wallet.Nonce)
 	}
 
 	return nil
@@ -178,17 +171,16 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 
 func (n *Node) updateBalancesNonces(b *chain.Block) error {
 	for _, tx := range b.Transactions {
-		// HACK: не найкраще рішення, через повторення логіки
-		// HACK: якщо той, хто робить блок, відправить транзакцію то Nonce оновится 2 рази
+		// HACK: якщо proposer надсилає звичайну tx, то його Nonce оновиться двічі
 		if bytes.Equal(tx.From, []byte(STAKE)) || bytes.Equal(tx.From, []byte(REWARDWALLET)) {
 			walletTo, err := n.bs.GetWalletByAddress(tx.To)
 			if err != nil {
 				return err
 			}
 			walletTo.Balance += tx.Amount
-			walletTo.Nonce++
+			// Nonce не збільшуємо — він відслідковує лише відправлені (outgoing) транзакції
 			if err = n.bs.UpdateBalance(&walletTo); err != nil {
-				log.Fatal().Err(err).Str("wallet", string(walletTo.Address)).Msg("помилка оновлення балансу гаманця")
+				return fmt.Errorf("помилка оновлення балансу гаманця %x: %w", walletTo.Address, err)
 			}
 			continue
 		}
@@ -201,11 +193,8 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 			return err
 		}
 
-		// оновлюю баланси
 		walletFrom.Balance -= tx.Amount
 		walletTo.Balance += tx.Amount
-
-		// додаю +1 до Nonce
 		walletFrom.Nonce++
 
 		if err := n.bs.UpdateBalance(&walletFrom); err != nil {
@@ -237,7 +226,6 @@ func (n *Node) addValidatorsToDB(block *chain.Block) error {
 			if err := n.bs.AddValidator(validator); err != nil {
 				return err
 			}
-
 		}
 	}
 	return nil
@@ -248,11 +236,13 @@ func (n *Node) deleteValidatorsFromDB(block *chain.Block) error {
 		if bytes.Equal(tx.From, []byte("unstake")) {
 			validator, err := n.bs.GetValidator(tx.To)
 			if err != nil {
-				panic(err)
+				log.Error().Err(err).Msg("помилка отримання валідатора при unstake")
+				return err
 			}
 
 			if err = n.bs.DeleteValidator(validator); err != nil {
-				panic(err)
+				log.Error().Err(err).Msg("помилка видалення валідатора при unstake")
+				return err
 			}
 		}
 	}

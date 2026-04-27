@@ -17,15 +17,9 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 
 	log.Info().Str("from", stream.Conn().RemoteMultiaddr().String()).Msg("Отримано новий прямий потік")
 
-	defer func() {
-		// stream.Reset() // NOTE: що воно робить, і яка різниця порівняно з stream.Close()?
-		//                         я дізнався що це щось страшне
-		stream.Close()
-	}()
+	defer stream.Close()
 
-	// Створюємо reader для читання даних з потоку
 	reader := bufio.NewReader(stream)
-	// Читаємо дані до символу нового рядка. Це простий спосіб розділяти повідомлення.
 	reqBytes, err := reader.ReadBytes('\n')
 	if err != nil {
 		log.Error().Err(err).Msg("Помилка читання з потоку")
@@ -33,89 +27,73 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 	}
 
 	var msg Message
-	err = json.Unmarshal(reqBytes, &msg)
-	if err != nil {
+	if err = json.Unmarshal(reqBytes, &msg); err != nil {
 		log.Error().Err(err).Msg("Помилка розпаковки повідомлення")
 		return
 	}
 
 	switch msg.Type {
-	case MsgRequestBlock: // HACK: ну тут треба точно переписувати, тому що зараз це жахливо
-		var data chain.Block
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			log.Error().Err(err).Msg("помилка розпаковки block з запиту на блок")
-			return
-		}
-		lastBlock, err := n.bs.GetLastBlock()
+	case MsgRequestBlock:
+		n.handleStreamRequestBlock(stream, &msg)
+	}
+}
+
+func (n *Node) handleStreamRequestBlock(stream network.Stream, msg *Message) {
+	var reqData chain.Block
+	if err := json.Unmarshal(msg.Data, &reqData); err != nil {
+		log.Error().Err(err).Msg("помилка розпаковки block з запиту на блок")
+		return
+	}
+
+	lastBlock, err := n.bs.GetLastBlock()
+	if err != nil {
+		log.Error().Err(err).Msg("помилка отримання останнього блоку")
+		return
+	}
+
+	var blockToSend *chain.Block
+	if lastBlock.Height <= reqData.Height {
+		blockToSend = lastBlock
+	} else {
+		blockToSend, err = n.bs.GetBlock(reqData.Height)
 		if err != nil {
-			log.Error().Err(err).Msg("помилка бази даних")
+			log.Error().Err(err).Uint32("height", reqData.Height).Msg("помилка отримання блоку")
 			return
-		}
-		if lastBlock.Height <= data.Height {
-			respBlockBytes, err := json.Marshal(lastBlock)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка розпаковки останнього блоку")
-			}
-
-			respMsg := Message{
-				Type:      MsgResponeBlock,
-				Timestamp: time.Now().UnixMilli(),
-				Data:      respBlockBytes,
-				Pub:       n.keys.Pub,
-			}
-
-			err = respMsg.sign(n.keys.Priv)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка підпису повідомлення")
-			}
-
-			respBytes, err := json.Marshal(respMsg)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка розпаковки повідомлення")
-			}
-			writer := bufio.NewWriter(stream)
-			_, err = writer.Write(append(respBytes, '\n'))
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка запису в потік")
-			}
-			writer.Flush()
-		} else {
-			reqBlock, err := n.bs.GetBlock(data.Height)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка отримання блоку")
-			}
-			reqBlockBytes, err := json.Marshal(reqBlock)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка розпаковки блоку")
-			}
-
-			respMsg := Message{
-				Type:      MsgResponeBlock,
-				Timestamp: time.Now().UnixMilli(),
-				Data:      reqBlockBytes,
-				Pub:       n.keys.Pub,
-			}
-
-			err = respMsg.sign(n.keys.Priv)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка підпису повідомлення")
-			}
-
-			respBytes, err := json.Marshal(respMsg)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка розпаковки повідомлення")
-			}
-
-			writer := bufio.NewWriter(stream)
-			_, err = writer.Write(append(respBytes, '\n'))
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка запису в потік")
-			}
-			if err = writer.Flush(); err != nil {
-				log.Err(err).Msg("помилка відправки повідомлення")
-			}
 		}
 	}
+
+	if err := n.writeBlockToStream(stream, blockToSend); err != nil {
+		log.Error().Err(err).Msg("помилка відправки блоку в потік")
+	}
+}
+
+func (n *Node) writeBlockToStream(stream network.Stream, block *chain.Block) error {
+	blockBytes, err := json.Marshal(block)
+	if err != nil {
+		return fmt.Errorf("помилка серіалізації блоку: %w", err)
+	}
+
+	respMsg := Message{
+		Type:      MsgResponeBlock,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      blockBytes,
+		Pub:       n.keys.Pub,
+	}
+
+	if err = respMsg.sign(n.keys.Priv); err != nil {
+		return fmt.Errorf("помилка підпису відповіді: %w", err)
+	}
+
+	respBytes, err := json.Marshal(respMsg)
+	if err != nil {
+		return fmt.Errorf("помилка серіалізації відповіді: %w", err)
+	}
+
+	writer := bufio.NewWriter(stream)
+	if _, err = writer.Write(append(respBytes, '\n')); err != nil {
+		return fmt.Errorf("помилка запису в потік: %w", err)
+	}
+	return writer.Flush()
 }
 
 func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, error) {
@@ -133,8 +111,7 @@ func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, er
 		return nil, err
 	}
 
-	_, err = writer.Write(append(msgBytes, '\n'))
-	if err != nil {
+	if _, err = writer.Write(append(msgBytes, '\n')); err != nil {
 		stream.Reset()
 		return nil, err
 	}
@@ -151,7 +128,7 @@ func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, er
 	}
 
 	if !respMsg.verify() {
-		return nil, fmt.Errorf("повідомлення має не вілідний підпис")
+		return nil, fmt.Errorf("повідомлення має невалідний підпис")
 	}
 
 	return &respMsg, nil

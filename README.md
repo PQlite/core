@@ -1,11 +1,111 @@
-# TODO
+# PQlite
 
-- [x] виправити типи в database/database.go (блок використовує uint32 для висоти, а strconv.FormatUint потребує uint64)
-- [ ] переглянути модулі. можливо треба буде розділяти/перености на різні модулі
-- [x] помилка з висотою блоку. коли має N блоків, думає що йому потрібно N+2
-- [ ] додати fee до транзакцій
-- [ ] після помилок треба відновлювати виробнитство блоків
-- [x] перейти з float32 на щось інше, для точності
-- [ ] зробити обмеження на час створення блоку (це складно, тому що блоки можуть не робитись через відсутність транзакцій)
-- [ ] штраф за пропуск блоку для валідатора
-- [ ] додати копійки (зараз тільки int64)
+A lightweight Proof-of-Stake blockchain node written in Go.
+
+## Architecture
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   HTTP API  │    │     P2P     │    │   Database  │
+│  (Fiber)    │    │  (libp2p)   │    │  (BadgerDB) │
+└──────┬──────┘    └──────┬──────┘    └──────┬──────┘
+       │                  │                  │
+       └──────────────────┼──────────────────┘
+                          │
+                    ┌─────┴─────┐
+                    │   chain/  │
+                    │  PoS core │
+                    └───────────┘
+```
+
+**Packages:**
+- `chain/` — block, transaction, validator, and consensus logic
+- `p2p/` — libp2p node, GossipSub broadcast, DHT peer discovery, sync
+- `database/` — BadgerDB persistence for blocks, wallets, and validators
+- `api/` — REST API for submitting transactions and querying state
+- `cmd/cli/` — command-line tool for key management and transactions
+- `cmd/bench/` — throughput benchmark
+
+## Consensus
+
+PQlite uses weighted Proof-of-Stake with **round-based proposer rotation**:
+
+1. After each block, the next proposer is selected deterministically from `SHA256(blockHash + round)` weighted by stake.
+2. The proposer broadcasts a block proposal; validators vote with their stake keys.
+3. When `>50%` of total stake votes, the proposer broadcasts a commit and the block is finalized.
+4. If the proposer sends an invalid block or doesn't respond within **15 seconds**, validators broadcast `MsgReject`. On receiving a reject, every node increments the round, which selects a different proposer for the same block height — without touching the chain state.
+
+## Running
+
+```bash
+go run .
+```
+
+The node will:
+- Open (or create) a BadgerDB at `/tmp/badger`
+- Create a genesis block on first run
+- Start the P2P node on port `4003`
+- Start the HTTP API on port `8081`
+
+The node key is stored in `.node.key`. The validator/signing key is stored in `.env`.
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Node status |
+| `GET` | `/lastBlock` | Latest block |
+| `GET` | `/block/:height` | Block by height |
+| `GET` | `/blocks` | All blocks |
+| `GET` | `/addr/:hex` | Wallet balance and nonce |
+| `GET` | `/txs` | Mempool size |
+| `POST` | `/tx` | Submit a signed transaction |
+
+**Transaction format** (`POST /tx`):
+```json
+{
+  "from":      "<base64 public key>",
+  "to":        "<base64 public key>",
+  "amount":    100,
+  "timestamp": 1700000000000,
+  "nonce":     3,
+  "signature": "<base64 signature>"
+}
+```
+
+## CLI
+
+```bash
+# Generate a new key pair
+go run ./cmd/cli/ keygen -out mykey.json
+
+# Check balance (address in hex)
+go run ./cmd/cli/ balance 8e28875a...
+
+# Send a transaction (nonce is fetched automatically)
+go run ./cmd/cli/ send -key .env -to 8e28875a... -amount 100
+
+# Query blocks
+go run ./cmd/cli/ blocks
+go run ./cmd/cli/ block 1
+```
+
+## Throughput test
+
+```bash
+go run ./cmd/bench/ -count 1000 -par 8
+```
+
+Reports API submission rate (tx/s), time to first block, and effective TPS after block confirmation.
+
+## Stack
+
+| Component | Library |
+|-----------|---------|
+| P2P networking | [go-libp2p](https://github.com/libp2p/go-libp2p) |
+| Pub/sub | go-libp2p-pubsub (GossipSub) |
+| DHT discovery | go-libp2p-kad-dht |
+| Storage | [BadgerDB v4](https://github.com/dgraph-io/badger) |
+| HTTP API | [Fiber v2](https://github.com/gofiber/fiber) |
+| Crypto | github.com/PQlite/crypto |
+| Logging | [zerolog](https://github.com/rs/zerolog) |

@@ -29,6 +29,7 @@ type Node struct {
 	kdht          *dht.IpfsDHT
 	keys          *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
 	nextProposer  chain.Validator
+	currentRound  uint32
 	vote          chain.VoteCh
 	messagesQueue chan Message
 }
@@ -97,7 +98,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		keys:          keys,
 		nextProposer:  chain.Validator{},
 		vote:          make(chan chain.Vote, 100),
-		messagesQueue: make(chan Message),
+		messagesQueue: make(chan Message, 100),
 	}, nil
 }
 
@@ -170,7 +171,8 @@ func (n *Node) peerDiscovery() {
 		case <-ticker.C:
 			peerChan, err := routingDiscovery.FindPeers(n.ctx, ns)
 			if err != nil {
-				log.Fatal().Err(err).Msg("помилка пошуку пірів")
+				log.Error().Err(err).Msg("помилка пошуку пірів")
+				continue
 			}
 
 			for p := range peerChan {

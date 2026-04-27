@@ -1,7 +1,5 @@
 package p2p
 
-// TODO: зробити механізм відмови від блоку. коли блок не пройшов перевірку, треба щоб мережа не зупинялась, а вибрала іншого валідатора
-
 import (
 	"bytes"
 	"encoding/json"
@@ -11,6 +9,11 @@ import (
 	"github.com/PQlite/crypto"
 	"github.com/rs/zerolog/log"
 )
+
+// proposalTimeout — скільки очікуємо блок від proposer-а перед тим як перейти до наступного раунду.
+// Якщо proposer не відповів або зробив поганий блок — всі ноди збільшують раунд і
+// SelectNextProposer вибирає іншого кандидата для тієї ж висоти.
+const proposalTimeout = 15 * time.Second
 
 func (n *Node) handleBroadcastMessages() {
 	go n.processBlockProposalCommit()
@@ -28,11 +31,10 @@ func (n *Node) handleBroadcastMessages() {
 		}
 
 		if data.ReceivedFrom == n.host.ID() {
-			if message.Type != MsgBlockProposal && message.Type != MsgCommit && message.Type != MsgVote {
+			if message.Type != MsgBlockProposal && message.Type != MsgCommit && message.Type != MsgVote && message.Type != MsgReject {
 				log.Debug().Msg("повідомлення від себе")
 				continue
 			}
-			log.Debug().Str("type", string(message.Type)).Msg("отримано власне повідомлення типу")
 		}
 
 		if !message.verify() {
@@ -53,17 +55,41 @@ func (n *Node) handleBroadcastMessages() {
 	}
 }
 
+// processBlockProposalCommit обробляє консенсусні повідомлення послідовно.
+// Таймер запускається лише після першого отриманого блоку чи коміту (після синхронізації),
+// тому не спрацьовує передчасно під час завантаження блоків.
 func (n *Node) processBlockProposalCommit() {
-	for {
-		message := <-n.messagesQueue
+	var timer *time.Timer
+	var timerCh <-chan time.Time
 
-		switch message.Type {
-		case MsgBlockProposal:
-			n.handleMsgBlockProposal(message.Data)
-		case MsgCommit:
-			n.handleMsgCommit(message.Data)
-		case MsgReject:
-			n.handleMsgReject()
+	for {
+		select {
+		case message := <-n.messagesQueue:
+			switch message.Type {
+			case MsgBlockProposal:
+				timer, timerCh = restartTimer(timer, proposalTimeout)
+				n.handleMsgBlockProposal(message.Data)
+			case MsgCommit:
+				timer, timerCh = restartTimer(timer, proposalTimeout)
+				n.handleMsgCommit(message.Data)
+			case MsgReject:
+				n.handleMsgReject(message.Data)
+			}
+
+		case <-timerCh:
+			// Proposer не надіслав блок вчасно.
+			// Якщо ця нода сама є proposer-ом — вона просто ще не отримала транзакцій,
+			// тому пропускаємо таймаут щоб не відхиляти себе.
+			if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+				timer, timerCh = restartTimer(timer, proposalTimeout)
+				continue
+			}
+			log.Warn().
+				Hex("proposer", n.nextProposer.Address).
+				Uint32("round", n.currentRound).
+				Msg("timeout: proposer не відповів — переходимо до наступного раунду")
+			n.advanceRound()
+			timer, timerCh = restartTimer(timer, proposalTimeout)
 		}
 	}
 }
@@ -74,9 +100,7 @@ func (n *Node) handleMsgNewTransaction(data []byte) {
 		log.Error().Err(err).Msg("помилка розпаковки транзакції")
 		return
 	}
-
 	log.Info().Int64("latency", time.Now().UnixMilli()-tx.Timestamp).Msg("отримано транзакцію")
-
 	if err := n.mempool.Add(&tx); err != nil {
 		log.Warn().Err(err).Msg("отримана транзакція не була додана до mempool")
 	}
@@ -97,6 +121,8 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	}
 
 	if err := n.fullBlockVerefication(&block); err != nil {
+		log.Warn().Err(err).Msg("блок не пройшов верифікацію — надсилаємо reject")
+		n.rejectCurrentProposer()
 		return
 	}
 
@@ -105,9 +131,8 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		log.Error().Err(err).Msg("помилка створення повідомлення для голосування")
 		return
 	}
-
 	if err = n.topic.broadcast(voteMsg, n.ctx); err != nil {
-		log.Error().Err(err).Msg("помилка розсилання повідомлення голосування")
+		log.Error().Err(err).Msg("помилка розсилання голосу")
 		return
 	}
 
@@ -130,8 +155,8 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	var votersList []chain.Vote
 	var acceptedAmount int64
 
-	timeout := time.NewTimer(30 * time.Second)
-	defer timeout.Stop()
+	voteTimeout := time.NewTimer(30 * time.Second)
+	defer voteTimeout.Stop()
 
 collectVotes:
 	for {
@@ -149,8 +174,11 @@ collectVotes:
 			if (stakeAmount / 2) < acceptedAmount {
 				break collectVotes
 			}
-		case <-timeout.C:
-			log.Warn().Int64("зібрано", acceptedAmount).Int64("потрібно", stakeAmount/2+1).Msg("timeout очікування голосів — недостатньо голосів")
+		case <-voteTimeout.C:
+			log.Warn().
+				Int64("зібрано", acceptedAmount).
+				Int64("потрібно", stakeAmount/2+1).
+				Msg("timeout голосування — недостатньо голосів")
 			return
 		}
 	}
@@ -160,7 +188,6 @@ collectVotes:
 		log.Error().Err(err).Msg("помилка створення commit повідомлення")
 		return
 	}
-
 	if err = n.topic.broadcast(commitMsg, n.ctx); err != nil {
 		log.Error().Err(err).Msg("помилка відправки commit повідомлення")
 		return
@@ -217,7 +244,10 @@ func (n *Node) handleMsgCommit(data []byte) {
 	}
 
 	if (totalStake / 2) >= acceptedStake {
-		log.Error().Int64("зібрано", acceptedStake).Int64("потрібно", totalStake/2+1).Msg("commit не має достатньої кількості голосів")
+		log.Error().
+			Int64("зібрано", acceptedStake).
+			Int64("потрібно", totalStake/2+1).
+			Msg("commit не має достатньої кількості голосів")
 		return
 	}
 
@@ -225,7 +255,7 @@ func (n *Node) handleMsgCommit(data []byte) {
 		log.Error().Err(err).Msg("помилка збереження блоку")
 		return
 	}
-	log.Info().Hex("block hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("додано новий блок до ланцюжка")
+	log.Info().Hex("hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("новий блок додано до ланцюжка")
 
 	go n.mempool.ClearMempool(commit.Block.Transactions)
 
@@ -233,17 +263,17 @@ func (n *Node) handleMsgCommit(data []byte) {
 		log.Error().Err(err).Msg("помилка додавання валідаторів до БД")
 		return
 	}
-
 	if err := n.deleteValidatorsFromDB(&commit.Block); err != nil {
 		log.Error().Err(err).Msg("помилка видалення валідаторів з БД")
 		return
 	}
-
 	if err := n.updateBalancesNonces(&commit.Block); err != nil {
 		log.Error().Err(err).Msg("помилка оновлення балансів/nonce")
 		return
 	}
 
+	// Новий блок — скидаємо раунд і вибираємо наступного proposer-а
+	n.currentRound = 0
 	if err := n.setNextProposer(); err != nil {
 		log.Error().Err(err).Msg("помилка вибору наступного proposer")
 		return
@@ -255,28 +285,83 @@ func (n *Node) handleMsgCommit(data []byte) {
 			log.Error().Err(err).Msg("помилка створення block proposal")
 			return
 		}
-
 		if err = n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
 			log.Error().Err(err).Msg("помилка трансляції нового блоку")
 		}
 	}
 }
 
-func (n *Node) handleMsgReject() {
-	validator, err := n.bs.GetValidator(n.nextProposer.Address)
-	if err != nil {
-		log.Error().Err(err).Msg("помилка отримання валідатора при reject")
+func (n *Node) handleMsgReject(data []byte) {
+	var reject Reject
+	if err := json.Unmarshal(data, &reject); err != nil {
+		log.Error().Err(err).Msg("помилка розпаковки reject повідомлення")
 		return
 	}
 
-	if err := n.bs.DeleteValidator(validator); err != nil {
-		log.Error().Err(err).Msg("помилка видалення валідатора при reject")
+	// Ігноруємо reject якщо він не відповідає нашому поточному стану
+	if !bytes.Equal(reject.Proposer, n.nextProposer.Address) || reject.Round != n.currentRound {
+		log.Debug().Msg("reject не відповідає поточному стану — ігнорується")
 		return
 	}
 
+	log.Warn().
+		Hex("proposer", reject.Proposer).
+		Uint32("round", reject.Round).
+		Msg("отримано reject — переходимо до наступного раунду")
+	n.advanceRound()
+}
+
+// advanceRound збільшує номер раунду і вибирає нового proposer-а.
+// Викликається коли поточний proposer зробив поганий блок або не відповів.
+func (n *Node) advanceRound() {
+	go drainChannel(n.vote)
+	oldProposer := n.nextProposer.Address
+	oldRound := n.currentRound
+	n.currentRound++
 	if err := n.setNextProposer(); err != nil {
-		log.Error().Err(err).Msg("помилка вибору наступного proposer після reject")
+		log.Error().Err(err).Msg("помилка вибору proposer після переходу раунду")
+		return
 	}
+	log.Info().
+		Hex("старий proposer", oldProposer).
+		Uint32("старий раунд", oldRound).
+		Hex("новий proposer", n.nextProposer.Address).
+		Uint32("новий раунд", n.currentRound).
+		Msg("перехід до наступного раунду")
+}
+
+// rejectCurrentProposer зберігає поточний (proposer, round) перед просуванням раунду,
+// потім сповіщає мережу через MsgReject зі старими значеннями.
+// Важливо зберегти старі значення ДО advanceRound, бо інакше повідомлення
+// не відповідатиме стану інших нод.
+func (n *Node) rejectCurrentProposer() {
+	proposer := make([]byte, len(n.nextProposer.Address))
+	copy(proposer, n.nextProposer.Address)
+	round := n.currentRound
+
+	n.advanceRound()
+
+	msg, err := n.getRejectMsg(proposer, round)
+	if err != nil {
+		log.Error().Err(err).Msg("помилка створення reject повідомлення")
+		return
+	}
+	if err = n.topic.broadcast(msg, n.ctx); err != nil {
+		log.Error().Err(err).Msg("помилка broadcast reject")
+	}
+}
+
+func restartTimer(t *time.Timer, d time.Duration) (*time.Timer, <-chan time.Time) {
+	if t != nil {
+		if !t.Stop() {
+			select {
+			case <-t.C:
+			default:
+			}
+		}
+	}
+	nt := time.NewTimer(d)
+	return nt, nt.C
 }
 
 func drainChannel[T any](ch chan T) {

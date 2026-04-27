@@ -19,7 +19,7 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 		return chain.Validator{}, fmt.Errorf("помилка отримання списку валідаторів: %w", err)
 	}
 
-	nextProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators)
+	nextProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, n.currentRound)
 	if err != nil {
 		return chain.Validator{}, err
 	}

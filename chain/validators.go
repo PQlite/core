@@ -11,7 +11,10 @@ type Validator struct {
 	Amount  int64
 }
 
-func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, error) {
+// SelectNextProposer детерміністично вибирає proposer на основі хешу блоку та номеру раунду.
+// Різні раунди при одній висоті дають різних proposer-ів, що дозволяє пропускати
+// недоступних або несправних validat-ів без зміни стану ланцюжка.
+func SelectNextProposer(blockHash []byte, validators []Validator, round uint32) (*Validator, error) {
 	if len(validators) == 0 {
 		return nil, errors.New("empty validator set")
 	}
@@ -22,23 +25,22 @@ func SelectNextProposer(blockHash []byte, validators []Validator) (*Validator, e
 	}
 
 	if totalAmount == 0 {
-		// If total stake is 0, we can just pick the first validator
 		return &validators[0], nil
 	}
 
-	// Use the block hash to deterministically select a proposer
-	seed := sha256.Sum256(blockHash)
+	// Мікс хешу блоку з номером раунду для отримання різного proposer-а в кожному раунді
+	roundBytes := []byte{byte(round >> 24), byte(round >> 16), byte(round >> 8), byte(round)}
+	seed := sha256.Sum256(append(blockHash, roundBytes...))
 	hashInt := new(big.Int).SetBytes(seed[:])
 	pick := new(big.Int).Mod(hashInt, big.NewInt(totalAmount))
 
-	var cumulativeAmount int64
+	var cumulative int64
 	for i := range validators {
-		cumulativeAmount += validators[i].Amount
-		if pick.Int64() < cumulativeAmount {
+		cumulative += validators[i].Amount
+		if pick.Int64() < cumulative {
 			return &validators[i], nil
 		}
 	}
 
-	// This part should not be reached if logic is correct, but as a fallback
 	return &validators[0], nil
 }

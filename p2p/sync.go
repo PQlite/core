@@ -12,6 +12,14 @@ import (
 )
 
 func (n *Node) syncBlockchain() {
+	// Гарантуємо що одночасно виконується лише одна синхронізація.
+	// Це важливо бо syncBlockchain може тригеритись з кількох місць:
+	// Start(), NotifyBundle.ConnectedF, fullBlockVerefication.
+	if !n.syncing.CompareAndSwap(false, true) {
+		return
+	}
+	defer n.syncing.Store(false)
+
 	// OPTIMIZE: зробити отримання нових блоків в batch
 	for {
 		localBlock, err := n.bs.GetLastBlock()

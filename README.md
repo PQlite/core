@@ -67,6 +67,8 @@ PQlite uses fixed-point arithmetic for amounts with **2 decimal places** (kopeck
 | `GET` | `/blocks` | All blocks |
 | `GET` | `/addr/:hex` | Wallet balance and nonce |
 | `GET` | `/txs` | Mempool size |
+| `GET` | `/nextProposer` | Current expected proposer |
+| `GET` | `/currentRound` | Current consensus round |
 | `POST` | `/tx` | Submit a signed transaction |
 
 **Transaction format** (`POST /tx`):

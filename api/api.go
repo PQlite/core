@@ -70,6 +70,8 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/blocks", s.handleGetAllBlocks)
 	s.app.Get("/addr/:id", s.handleGetBalance)
 	s.app.Get("/lastBlock", s.handleGetLastBlock)
+	s.app.Get("/nextProposer", s.handleGetNextProposer)
+	s.app.Get("/currentRound", s.handleGetCurrentRound)
 	s.app.Post("/tx", s.handlePostTx)
 
 	// щоб сервер не відповідав усіляким підораскам
@@ -183,6 +185,14 @@ func (s *Server) handleGetLastBlock(c *fiber.Ctx) error {
 		})
 	}
 	return c.JSON(lastBlock)
+}
+
+func (s *Server) handleGetNextProposer(c *fiber.Ctx) error {
+	return c.JSON(s.node.GetNextProposer())
+}
+
+func (s *Server) handleGetCurrentRound(c *fiber.Ctx) error {
+	return c.JSON(s.node.GetCurrentRound())
 }
 
 // Start запускає HTTP-сервер.

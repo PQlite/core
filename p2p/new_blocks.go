@@ -35,22 +35,30 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 
 	log.Info().Msg("очікування транзакцій для нового блоку")
 
+	var txsToInclude []*chain.Transaction
 	for {
-		n.mempool.TXs = n.getOnlyValidTransaction(n.mempool.TXs)
-		if n.mempool.Len() > 0 {
+		mempoolTXs := n.mempool.GetTransactions()
+		var toDrop []*chain.Transaction
+		txsToInclude, toDrop = n.getValidTransactions(mempoolTXs)
+
+		if len(toDrop) > 0 {
+			n.mempool.ClearMempool(toDrop)
+		}
+
+		if len(txsToInclude) > 0 {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	log.Info().Int("mempool", n.mempool.Len()).Msg("кількість транзакцій в mempool")
+	log.Info().Int("mempool", len(txsToInclude)).Msg("кількість транзакцій в mempool для нового блоку")
 
 	block := chain.Block{
 		Height:       lastBlock.Height + 1,
 		Timestamp:    time.Now().UnixMilli(),
 		PrevHash:     lastBlock.Hash,
 		Proposer:     n.keys.Pub,
-		Transactions: n.mempool.TXs,
+		Transactions: txsToInclude,
 	}
 
 	if err = n.addRewardTx(&block); err != nil {
@@ -127,7 +135,7 @@ func (n *Node) setNextProposer() error {
 	return nil
 }
 
-func (n *Node) validateTx(tx *chain.Transaction) error {
+func (n *Node) validateTxState(tx *chain.Transaction, nonces map[string]uint32, balances map[string]int64) error {
 	if bytes.Equal(tx.From, []byte(REWARDWALLET)) {
 		if tx.Amount != REWARD {
 			return fmt.Errorf("транзакція нагороди має неправильну суму")
@@ -135,34 +143,76 @@ func (n *Node) validateTx(tx *chain.Transaction) error {
 		return nil
 	}
 
-	wallet, err := n.bs.GetWalletByAddress(tx.From)
-	if err != nil {
-		return fmt.Errorf("помилка отримання даних про гаманець: %w", err)
+	fromAddr := string(tx.From)
+	
+	// Initialize state if not present
+	if _, ok := nonces[fromAddr]; !ok {
+		wallet, err := n.bs.GetWalletByAddress(tx.From)
+		if err != nil {
+			return fmt.Errorf("помилка отримання даних про гаманець: %w", err)
+		}
+		nonces[fromAddr] = wallet.Nonce
+		balances[fromAddr] = wallet.Balance
 	}
 
-	if wallet.Balance < tx.Amount {
-		return fmt.Errorf("недостатній баланс для переказу")
+	currentNonce := nonces[fromAddr]
+	currentBalance := balances[fromAddr]
+
+	if currentBalance < tx.Amount {
+		return fmt.Errorf("недостатній баланс для переказу: має %d, треба %d", currentBalance, tx.Amount)
 	}
-	if tx.Nonce != wallet.Nonce+1 {
-		return fmt.Errorf("невірний Nonce транзакції: %d, Nonce гаманця: %d", tx.Nonce, wallet.Nonce)
+	
+	// For block inclusion, we only allow the EXACT next nonce.
+	// But in some contexts we might want to just check if it's potentially valid.
+	if tx.Nonce != currentNonce+1 {
+		return fmt.Errorf("невірний Nonce транзакції: %d, очікується %d (Nonce гаманця: %d)", tx.Nonce, currentNonce+1, currentNonce)
 	}
+
+	// Update state
+	nonces[fromAddr] = tx.Nonce
+	balances[fromAddr] = currentBalance - tx.Amount
 
 	return nil
 }
 
-func (n *Node) getOnlyValidTransaction(txs []*chain.Transaction) []*chain.Transaction {
-	validTxs := make([]*chain.Transaction, 0, len(txs))
+func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transaction, []*chain.Transaction) {
+	toInclude := make([]*chain.Transaction, 0, len(txs))
+	toDrop := make([]*chain.Transaction, 0)
+	
+	nonces := make(map[string]uint32)
+	balances := make(map[string]int64)
+
 	for _, tx := range txs {
-		if err := n.validateTx(tx); err == nil {
-			validTxs = append(validTxs, tx)
+		err := n.validateTxState(tx, nonces, balances)
+		if err == nil {
+			toInclude = append(toInclude, tx)
+		} else {
+			// If nonce is too high, we KEEP it in mempool for later.
+			// If it's something else (e.g. bad balance or bad signature or old nonce), we drop it.
+			
+			// We need to fetch original wallet state to check if it's truly invalid or just future
+			wallet, _ := n.bs.GetWalletByAddress(tx.From)
+			if wallet.Nonce >= tx.Nonce {
+				log.Warn().Err(err).Hex("tx", tx.Signature).Msg("dropping tx: nonce already processed or old")
+				toDrop = append(toDrop, tx)
+			} else if wallet.Balance < tx.Amount {
+				log.Warn().Err(err).Hex("tx", tx.Signature).Msg("dropping tx: insufficient balance")
+				toDrop = append(toDrop, tx)
+			} else {
+				// Potential future transaction or out of order - KEEP in mempool
+				log.Debug().Err(err).Hex("tx", tx.Signature).Msg("keeping tx in mempool: future nonce or temporary invalid")
+			}
 		}
 	}
-	return validTxs
+	return toInclude, toDrop
 }
 
 func (n *Node) checkBalances(txs []*chain.Transaction) error {
+	nonces := make(map[string]uint32)
+	balances := make(map[string]int64)
+
 	for _, tx := range txs {
-		if err := n.validateTx(tx); err != nil {
+		if err := n.validateTxState(tx, nonces, balances); err != nil {
 			return err
 		}
 	}

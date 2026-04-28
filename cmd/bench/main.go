@@ -17,8 +17,10 @@ import (
 	"github.com/PQlite/core/chain"
 )
 
-const defaultNode = "http://localhost:8081"
-const defaultKeyFile = ".env"
+const (
+	defaultNode    = "http://localhost:8081"
+	defaultKeyFile = ".env"
+)
 
 type keyFile struct {
 	Priv []byte `json:"priv"`
@@ -32,7 +34,7 @@ func main() {
 	workers := flag.Int("par", 4, "кількість паралельних воркерів відправки")
 	node := flag.String("node", defaultNode, "адреса ноди")
 	amount := flag.Int64("amount", 1, "сума кожної транзакції")
-	timeout := flag.Duration("timeout", 60*time.Second, "таймаут очікування підтвердження блоків")
+	timeout := flag.Duration("timeout", 3*time.Second, "таймаут очікування підтвердження блоків")
 	flag.Parse()
 
 	kf := loadKey(*keyPath)
@@ -66,8 +68,9 @@ func main() {
 			To:        toBytes,
 			Amount:    *amount,
 			Timestamp: time.Now().UnixMilli(),
-			Nonce:     startNonce + uint32(i),
+			Nonce:     startNonce,
 		}
+		startNonce++
 		if err := tx.Sign(kf.Priv); err != nil {
 			fmt.Fprintf(os.Stderr, "помилка підпису tx %d: %v\n", i, err)
 			os.Exit(1)
@@ -252,4 +255,3 @@ func fetchBlocks(node string) []chain.Block {
 	json.Unmarshal(body, &blocks)
 	return blocks
 }
-

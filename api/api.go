@@ -3,6 +3,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"net"
 	"sort"
@@ -62,7 +63,8 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 
 // setupRoutes реєструє всі обробники для маршрутів API.
 func (s *Server) setupRoutes() {
-	s.app.Get("/", s.handleGetStatus)
+	s.app.Static("/", "./public")
+	s.app.Get("/status", s.handleGetStatus)
 	s.app.Get("/block/:id", s.handleGetBlock)
 	s.app.Get("/txs", s.handleGetMempoolLen)
 	s.app.Get("/blocks", s.handleGetAllBlocks)
@@ -147,7 +149,7 @@ func (s *Server) handlePostTx(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleGetMempoolLen(c *fiber.Ctx) error {
-	txs := s.mempool.TXs
+	txs := s.mempool.GetTransactions()
 	return c.JSON(txs)
 }
 
@@ -155,9 +157,13 @@ func (s *Server) handleGetBalance(c *fiber.Ctx) error {
 	addr := c.Params("id")
 	addrBytes, err := hex.DecodeString(addr)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{
-			"error": err,
-		})
+		// Try base64 if hex fails
+		addrBytes, err = base64.StdEncoding.DecodeString(addr)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"error": "Invalid address format (must be hex or base64)",
+			})
+		}
 	}
 
 	wallet, err := s.bs.GetWalletByAddress(addrBytes)

@@ -147,7 +147,8 @@ func (s *Server) handlePostTx(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleGetMempoolLen(c *fiber.Ctx) error {
-	return c.SendString(strconv.Itoa(len(s.mempool.TXs)))
+	txs := s.mempool.TXs
+	return c.JSON(txs)
 }
 
 func (s *Server) handleGetBalance(c *fiber.Ctx) error {

@@ -1,12 +1,15 @@
 package p2p
 
-import "github.com/libp2p/go-libp2p/core/protocol"
+import (
+	"github.com/PQlite/core/chain"
+	"github.com/libp2p/go-libp2p/core/protocol"
+)
 
 const (
 	// wallets
 	STAKE        = "stake"
 	REWARDWALLET = "reward"
-	REWARD       = int64(1)
+	REWARD       = 1 * chain.Precision
 
 	// network
 	ns                         = "PQlite_test"

@@ -97,11 +97,11 @@
                             <tr><th class="px-6 py-3">From</th><th class="px-6 py-3">To</th><th class="px-6 py-3 text-right">Amount</th></tr>
                         </thead>
                         <tbody class="divide-y divide-gray-700">
-                            <template x-for="tx in recentTxs.slice(0, 15)" :key="tx.signature">
+                            <template x-for="(tx, index) in recentTxs.slice(0, 15)" :key="getTxKey(tx, index)">
                                 <tr class="hover:bg-gray-700/50 cursor-pointer" @click="showTxDetails(tx)">
                                     <td class="px-6 py-4 font-mono text-xs text-gray-400" x-text="displayAddr(tx.from)"></td>
                                     <td class="px-6 py-4 font-mono text-xs text-gray-400" x-text="displayAddr(tx.to)"></td>
-                                    <td class="px-6 py-4 text-right text-green-400 font-bold" x-text="tx.amount"></td>
+                                    <td class="px-6 py-4 text-right text-green-400 font-bold" x-text="formatAmount(tx.amount)"></td>
                                 </tr>
                             </template>
                         </tbody>
@@ -130,7 +130,7 @@
                                     <span class="text-[10px] font-bold px-2 py-0.5 rounded mr-2" :class="getTxType(tx).class" x-text="getTxType(tx).label"></span>
                                     <span class="text-xs font-mono text-gray-400" x-text="displayAddr(tx.from) + ' -> ' + displayAddr(tx.to)"></span>
                                 </div>
-                                <div class="text-white font-bold" x-text="tx.amount + ' PQL'"></div>
+                                <div class="text-white font-bold" x-text="formatAmount(tx.amount) + ' PQL'"></div>
                             </div>
                         </template>
                     </div>
@@ -147,7 +147,7 @@
                 </div>
                 <div class="space-y-4">
                     <div class="text-center py-4">
-                        <p class="text-4xl font-black" x-text="selectedTx?.amount + ' PQL'"></p>
+                        <p class="text-4xl font-black" x-text="formatAmount(selectedTx?.amount) + ' PQL'"></p>
                     </div>
                     <div class="space-y-3 text-sm">
                         <div class="bg-gray-900/50 p-3 rounded-lg"><p class="text-xs text-gray-500">FROM</p><p class="font-mono break-all" x-text="selectedTx?.from"></p></div>
@@ -193,6 +193,14 @@
                         if (lRes.ok) this.stats.lastHeight = (await lRes.json()).Height;
                         if (mRes.ok) this.stats.mempoolSize = (await mRes.json() || []).length;
                     } catch (e) { console.error(e); }
+                },
+
+                formatAmount(v) {
+                    if (!v) return '0.00';
+                    const precision = 100;
+                    const major = Math.floor(v / precision);
+                    const minor = Math.abs(v % precision);
+                    return `${major}.${minor.toString().padStart(2, '0')}`;
                 },
 
                 formatBlock(b) {
@@ -267,6 +275,18 @@
                     } else {
                         const res = await fetch('/addr/' + q);
                         if (res.ok) { /* Address logic */ }
+                    }
+                    this.searchQuery = '';
+                },
+
+                showBlockDetails(b) { this.selectedBlock = b; },
+                showTxDetails(tx) { this.selectedTx = tx; }
+            }
+        }
+    </script>
+</body>
+</html>
+ss logic */ }
                     }
                     this.searchQuery = '';
                 },

@@ -33,9 +33,11 @@ func main() {
 	count := flag.Int("count", 100, "кількість транзакцій")
 	workers := flag.Int("par", 4, "кількість паралельних воркерів відправки")
 	node := flag.String("node", defaultNode, "адреса ноди")
-	amount := flag.Int64("amount", 1, "сума кожної транзакції")
+	amountFloat := flag.Float64("amount", 1, "сума кожної транзакції")
 	timeout := flag.Duration("timeout", 3*time.Second, "таймаут очікування підтвердження блоків")
 	flag.Parse()
+
+	amount := int64(*amountFloat * float64(chain.Precision))
 
 	kf := loadKey(*keyPath)
 
@@ -54,10 +56,11 @@ func main() {
 	fmt.Printf("=== PQlite Throughput Bench ===\n")
 	fmt.Printf("Від:      %s\n", hex.EncodeToString(kf.Pub))
 	fmt.Printf("Кому:     %s\n", hex.EncodeToString(toBytes))
-	fmt.Printf("Транзакцій: %d (по %d), паралельно: %d\n\n", *count, *amount, *workers)
+	fmt.Printf("Транзакцій: %d (по %s PQL), паралельно: %d\n\n", *count, chain.FormatAmount(amount), *workers)
 
 	// Поточний nonce
 	startNonce := fetchNonce(*node, kf.Pub)
+	initialNonce := startNonce
 	fmt.Printf("Поточний nonce: %d → починаємо з %d\n\n", startNonce-1, startNonce)
 
 	// Будуємо всі транзакції заздалегідь (nonce строго послідовний)
@@ -66,7 +69,7 @@ func main() {
 		tx := chain.Transaction{
 			From:      kf.Pub,
 			To:        toBytes,
-			Amount:    *amount,
+			Amount:    amount,
 			Timestamp: time.Now().UnixMilli(),
 			Nonce:     startNonce,
 		}
@@ -140,7 +143,7 @@ func main() {
 	waitStart := time.Now()
 	deadline := waitStart.Add(*timeout)
 
-	targetNonce := startNonce + uint32(sentN) - 1
+	targetNonce := initialNonce + uint32(sentN) - 1
 	lastHeight := uint32(0)
 	confirmedByBlock := make(map[uint32]int)
 
@@ -161,7 +164,7 @@ func main() {
 
 			txCount := 0
 			for _, tx := range b.Transactions {
-				if bytes.Equal(tx.From, kf.Pub) && tx.Nonce >= startNonce && tx.Nonce <= targetNonce {
+				if bytes.Equal(tx.From, kf.Pub) && tx.Nonce >= initialNonce && tx.Nonce <= targetNonce {
 					txCount++
 				}
 			}

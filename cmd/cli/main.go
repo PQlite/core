@@ -122,7 +122,7 @@ func cmdBalance(args []string) {
 	fatal(json.Unmarshal(body, &wallet), "помилка відповіді")
 
 	fmt.Printf("Адреса: %s\n", hex.EncodeToString(wallet.Address))
-	fmt.Printf("Баланс: %d\n", wallet.Balance)
+	fmt.Printf("Баланс: %s PQL\n", chain.FormatAmount(wallet.Balance))
 	fmt.Printf("Nonce:  %d\n", wallet.Nonce)
 }
 
@@ -132,16 +132,18 @@ func cmdSend(args []string) {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	keyPath := fs.String("key", defaultKeyFile, "файл з ключами")
 	toHex := fs.String("to", "", "адреса отримувача (hex)")
-	amount := fs.Int64("amount", 0, "сума")
+	amountFloat := fs.Float64("amount", 0, "сума")
 	nonceFlag := fs.Uint("nonce", 0, "nonce (0 = автоматично)")
 	node := fs.String("node", defaultNode, "адреса ноди")
 	fs.Parse(args)
 
-	if *toHex == "" || *amount <= 0 {
+	if *toHex == "" || *amountFloat <= 0 {
 		fmt.Fprintln(os.Stderr, "вкажіть -to та -amount")
 		fs.Usage()
 		os.Exit(1)
 	}
+
+	amount := int64(*amountFloat * float64(chain.Precision))
 
 	kf := loadKey(*keyPath)
 
@@ -156,7 +158,7 @@ func cmdSend(args []string) {
 	tx := chain.Transaction{
 		From:      kf.Pub,
 		To:        toBytes,
-		Amount:    *amount,
+		Amount:    amount,
 		Timestamp: time.Now().UnixMilli(),
 		Nonce:     nonce,
 	}
@@ -178,7 +180,7 @@ func cmdSend(args []string) {
 	fmt.Printf("Транзакцію відправлено\n")
 	fmt.Printf("Від:   %s\n", hex.EncodeToString(kf.Pub))
 	fmt.Printf("Кому:  %s\n", *toHex)
-	fmt.Printf("Сума:  %d\n", *amount)
+	fmt.Printf("Сума:  %s PQL\n", chain.FormatAmount(amount))
 	fmt.Printf("Nonce: %d\n", nonce)
 }
 

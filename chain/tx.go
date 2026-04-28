@@ -5,6 +5,8 @@ package chain
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"strconv"
 
 	"github.com/PQlite/crypto"
 	"github.com/rs/zerolog/log"
@@ -65,6 +67,28 @@ func (t *Transaction) Verify() error {
 		return err
 	}
 	return nil
+}
+
+// FormatAmount converts an internal int64 amount to a human-readable decimal string.
+func FormatAmount(amount int64) string {
+	major := amount / Precision
+	minor := amount % Precision
+	if minor < 0 {
+		minor = -minor
+	}
+	// Assuming Precision is 100, we want 2 decimal places.
+	// If Precision changes, this formatting logic might need adjustment.
+	return fmt.Sprintf("%d.%02d", major, minor)
+}
+
+// ParseAmount converts a decimal string to the internal int64 representation.
+func ParseAmount(s string) (int64, error) {
+	// A simple implementation, might need better error handling
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, err
+	}
+	return int64(f * float64(Precision)), nil
 }
 
 // func VerifyAndAddValidators(t []*Transaction) error {

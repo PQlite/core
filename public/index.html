@@ -110,21 +110,21 @@
             </div>
         </div>
 
-        <!-- Block Details -->
+        <!-- Block Details Modal -->
         <div x-show="selectedBlock" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" @click.self="selectedBlock = null">
             <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
                 <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-                    <h3 class="text-xl font-bold">Block #<span x-text="selectedBlock?.Height"></span></h3>
-                    <button @click="selectedBlock = null" class="text-gray-400 hover:text-white">&times;</button>
+                    <h3 class="text-xl font-bold">Block #<span x-text="selectedBlock?.Height"></span> Details</h3>
+                    <button @click="selectedBlock = null" class="text-2xl text-gray-400 hover:text-white">&times;</button>
                 </div>
                 <div class="p-6 overflow-y-auto">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-sm">
                         <div><p class="text-gray-500 uppercase text-xs">Hash</p><p class="font-mono text-blue-400 break-all" x-text="selectedBlock?.Hash"></p></div>
-                        <div><p class="text-gray-500 uppercase text-xs">Time</p><p x-text="fullDate(selectedBlock?.Timestamp)"></p></div>
+                        <div><p class="text-gray-500 uppercase text-xs">Time (ISO 8601)</p><p x-text="fullDate(selectedBlock?.Timestamp)"></p></div>
                     </div>
                     <h4 class="font-bold mb-4">Transactions (<span x-text="selectedBlock?.Transactions?.length || 0"></span>)</h4>
                     <div class="space-y-2">
-                        <template x-for="tx in selectedBlock?.Transactions" :key="tx.signature">
+                        <template x-for="(tx, index) in selectedBlock?.Transactions" :key="getTxKey(tx, index)">
                             <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex justify-between items-center hover:border-blue-500 cursor-pointer" @click="showTxDetails(tx)">
                                 <div>
                                     <span class="text-[10px] font-bold px-2 py-0.5 rounded mr-2" :class="getTxType(tx).class" x-text="getTxType(tx).label"></span>
@@ -138,25 +138,45 @@
             </div>
         </div>
 
-        <!-- Transaction Details -->
+        <!-- Transaction Details Modal -->
         <div x-show="selectedTx" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md" @click.self="selectedTx = null">
-            <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-xl shadow-2xl p-6">
+            <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-xl shadow-2xl p-6 flex flex-col max-h-[90vh]">
                 <div class="flex justify-between items-center mb-6">
                     <h3 class="text-xl font-bold text-green-500">Transaction Info</h3>
-                    <button @click="selectedTx = null" class="text-gray-400 hover:text-white">&times;</button>
+                    <button @click="selectedTx = null" class="text-2xl text-gray-400 hover:text-white">&times;</button>
                 </div>
-                <div class="space-y-4">
+                <div class="space-y-4 overflow-y-auto">
                     <div class="text-center py-4">
-                        <p class="text-4xl font-black" x-text="formatAmount(selectedTx?.amount) + ' PQL'"></p>
+                        <p class="text-4xl font-black text-white" x-text="formatAmount(selectedTx?.amount) + ' PQL'"></p>
                     </div>
                     <div class="space-y-3 text-sm">
-                        <div class="bg-gray-900/50 p-3 rounded-lg"><p class="text-xs text-gray-500">FROM</p><p class="font-mono break-all" x-text="selectedTx?.from"></p></div>
-                        <div class="bg-gray-900/50 p-3 rounded-lg"><p class="text-xs text-gray-500">TO</p><p class="font-mono break-all" x-text="selectedTx?.to"></p></div>
+                        <div class="bg-gray-900/50 p-3 rounded-lg"><p class="text-xs text-gray-500">FROM</p><p class="font-mono break-all text-gray-300" x-text="selectedTx?.from"></p></div>
+                        <div class="bg-gray-900/50 p-3 rounded-lg"><p class="text-xs text-gray-500">TO</p><p class="font-mono break-all text-gray-300" x-text="selectedTx?.to"></p></div>
                         <div class="flex gap-4">
                             <div class="bg-gray-900/50 p-3 rounded-lg flex-1"><p class="text-xs text-gray-500">NONCE</p><p x-text="selectedTx?.nonce"></p></div>
-                            <div class="bg-gray-900/50 p-3 rounded-lg flex-1"><p class="text-xs text-gray-500">TIME</p><p x-text="fullDate(selectedTx?.timestamp)"></p></div>
+                            <div class="bg-gray-900/50 p-3 rounded-lg flex-1"><p class="text-xs text-gray-500">TIME (ISO)</p><p class="text-xs" x-text="fullDate(selectedTx?.timestamp)"></p></div>
                         </div>
+                        <div class="bg-gray-900/50 p-3 rounded-lg" x-show="selectedTx?.signature && selectedTx?.signature !== '0x'"><p class="text-xs text-gray-500 uppercase">Signature</p><p class="font-mono text-[10px] break-all text-gray-500" x-text="selectedTx?.signature"></p></div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Address Modal -->
+        <div x-show="selectedAddr" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" @click.self="selectedAddr = null">
+            <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-lg shadow-2xl p-8 text-center">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold">Wallet Details</h3>
+                    <button @click="selectedAddr = null" class="text-2xl text-gray-400 hover:text-white">&times;</button>
+                </div>
+                <div class="bg-blue-600/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+                </div>
+                <p class="text-gray-500 text-xs font-bold uppercase mb-1">Balance</p>
+                <h4 class="text-4xl font-black text-white mb-6"><span x-text="formatAmount(selectedAddr?.Balance)"></span> <span class="text-blue-500 text-2xl">PQL</span></h4>
+                <div class="bg-gray-900/80 p-4 rounded-xl text-left space-y-3">
+                    <div><p class="text-[10px] text-gray-500 uppercase font-bold">Address</p><p class="font-mono text-xs text-gray-300 break-all" x-text="selectedAddrHash"></p></div>
+                    <div class="flex justify-between border-t border-gray-700 pt-3"><span class="text-xs text-gray-500">NONCE</span><span class="font-bold" x-text="selectedAddr?.Nonce || 0"></span></div>
                 </div>
             </div>
         </div>
@@ -168,6 +188,7 @@
                 blocks: [], recentTxs: [], blocksLimit: 10,
                 stats: { lastHeight: 0, mempoolSize: 0 },
                 searchQuery: '', selectedBlock: null, selectedTx: null,
+                selectedAddr: null, selectedAddrHash: '',
                 
                 async init() {
                     await this.fetchData();
@@ -181,7 +202,6 @@
                             const raw = await bRes.json();
                             this.blocks = raw.map(b => this.formatBlock(b));
                             
-                            // Збираємо транзакції, фільтруючи системні для головного списку
                             let allTxs = [];
                             this.blocks.slice().reverse().forEach(b => {
                                 (b.Transactions || []).forEach(tx => {
@@ -196,11 +216,9 @@
                 },
 
                 formatAmount(v) {
-                    if (!v) return '0.00';
-                    const precision = 100;
-                    const major = Math.floor(v / precision);
-                    const minor = Math.abs(v % precision);
-                    return `${major}.${minor.toString().padStart(2, '0')}`;
+                    if (v === undefined || v === null) return '0.00';
+                    const val = parseFloat(v) / 100;
+                    return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 },
 
                 formatBlock(b) {
@@ -248,6 +266,10 @@
                     return { label: 'TRANSFER', class: 'text-green-500 bg-green-500/10' };
                 },
 
+                getTxKey(tx, index) {
+                    return (tx.signature && tx.signature !== '0x') ? tx.signature : `tx-${tx.nonce}-${tx.from}-${index}`;
+                },
+
                 truncateHash(h) {
                     const s = String(h);
                     return s.length > 15 ? s.substring(0, 10) + '...' + s.substring(s.length - 4) : s;
@@ -262,8 +284,9 @@
                 },
 
                 fullDate(ts) {
-                    if (!ts) return 'Genesis Block';
-                    return new Date(ts > 1e12 ? ts : ts * 1000).toLocaleString();
+                    if (ts === 0 || !ts) return '1970-01-01T00:00:00+00:00';
+                    const d = new Date(ts > 1e12 ? ts : ts * 1000);
+                    return d.toISOString().split('.')[0] + '+00:00';
                 },
 
                 async search() {
@@ -274,19 +297,10 @@
                         if (res.ok) this.selectedBlock = this.formatBlock(await res.json());
                     } else {
                         const res = await fetch('/addr/' + q);
-                        if (res.ok) { /* Address logic */ }
-                    }
-                    this.searchQuery = '';
-                },
-
-                showBlockDetails(b) { this.selectedBlock = b; },
-                showTxDetails(tx) { this.selectedTx = tx; }
-            }
-        }
-    </script>
-</body>
-</html>
-ss logic */ }
+                        if (res.ok) {
+                            this.selectedAddr = await res.json();
+                            this.selectedAddrHash = q;
+                        }
                     }
                     this.searchQuery = '';
                 },

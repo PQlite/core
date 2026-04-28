@@ -46,8 +46,16 @@ The node will:
 - Create a genesis block on first run
 - Start the P2P node on port `4003`
 - Start the HTTP API on port `8081`
+- Serve the **Web Explorer** at `http://localhost:8081/`
 
 The node key is stored in `.node.key`. The validator/signing key is stored in `.env`.
+
+## PQL Precision
+
+PQlite uses fixed-point arithmetic for amounts with **2 decimal places** (kopecks):
+- **1.00 PQL** is represented internally as `100`.
+- The CLI and API accept decimal values, but the core logic handles them as `int64`.
+- `Precision = 100` is defined in `chain/constants.go`.
 
 ## API
 
@@ -66,12 +74,13 @@ The node key is stored in `.node.key`. The validator/signing key is stored in `.
 {
   "from":      "<base64 public key>",
   "to":        "<base64 public key>",
-  "amount":    100,
+  "amount":    125,
   "timestamp": 1700000000000,
   "nonce":     3,
   "signature": "<base64 signature>"
 }
 ```
+*Note: `amount: 125` represents `1.25 PQL`.*
 
 ## CLI
 
@@ -82,8 +91,8 @@ go run ./cmd/cli/ keygen -out mykey.json
 # Check balance (address in hex)
 go run ./cmd/cli/ balance 8e28875a...
 
-# Send a transaction (nonce is fetched automatically)
-go run ./cmd/cli/ send -key .env -to 8e28875a... -amount 100
+# Send a transaction with decimal amount (e.g., 1.5 PQL)
+go run ./cmd/cli/ send -key .env -to 8e28875a... -amount 1.5
 
 # Query blocks
 go run ./cmd/cli/ blocks
@@ -93,7 +102,8 @@ go run ./cmd/cli/ block 1
 ## Throughput test
 
 ```bash
-go run ./cmd/bench/ -count 1000 -par 8
+# Run benchmark with 1000 txs, 8 parallel workers, 0.1 PQL each
+go run ./cmd/bench/ -count 1000 -par 8 -amount 0.1
 ```
 
 Reports API submission rate (tx/s), time to first block, and effective TPS after block confirmation.

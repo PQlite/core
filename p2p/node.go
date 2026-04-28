@@ -149,7 +149,7 @@ func (n *Node) Start() {
 
 func (n *Node) bootstrapLoop() {
 	// First attempt immediately
-	n.connectingToBootstrap()
+	n.connectToBootstrap()
 	if err := n.kdht.Bootstrap(n.ctx); err != nil {
 		log.Error().Err(err).Msg("помилка ініціалізації DHT")
 	}
@@ -163,7 +163,7 @@ func (n *Node) bootstrapLoop() {
 			// If we have few peers, try to reconnect to bootstrap
 			if len(n.host.Network().Peers()) < 3 {
 				log.Debug().Msg("мало пірів, пробуємо перепідключитися до bootstrap...")
-				n.connectingToBootstrap()
+				n.connectToBootstrap()
 				if err := n.kdht.Bootstrap(n.ctx); err != nil {
 					log.Error().Err(err).Msg("помилка ре-ініціалізації DHT")
 				}

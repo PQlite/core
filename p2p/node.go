@@ -252,7 +252,18 @@ func (n *Node) findAndConnectPeers(rd *discovery_routing.RoutingDiscovery) {
 	}
 }
 
-func (n *Node) connectingToBootstrap() {
+// GetNextProposer повертає поточного очікуваного творця блоку.
+func (n *Node) GetNextProposer() chain.Validator {
+	return n.nextProposer
+}
+
+// GetCurrentRound повертає номер поточного раунду консенсусу.
+func (n *Node) GetCurrentRound() uint32 {
+	return n.currentRound
+}
+
+func (n *Node) connectToBootstrap() {
+
 	for _, addr := range BOOTSTRAPLIST {
 		pi, err := peer.AddrInfoFromString(addr)
 		if err != nil {

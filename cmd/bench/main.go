@@ -59,66 +59,78 @@ func main() {
 	fmt.Printf("Транзакцій: %d (по %s PQL), паралельно: %d\n\n", *count, chain.FormatAmount(amount), *workers)
 
 	// Поточний nonce
-	startNonce := fetchNonce(*node, kf.Pub)
-	initialNonce := startNonce
-	fmt.Printf("Поточний nonce: %d → починаємо з %d\n\n", startNonce-1, startNonce)
-
-	// Будуємо всі транзакції заздалегідь (nonce строго послідовний)
-	txs := make([][]byte, *count)
-	for i := 0; i < *count; i++ {
-		tx := chain.Transaction{
-			From:      kf.Pub,
-			To:        toBytes,
-			Amount:    amount,
-			Timestamp: time.Now().UnixMilli(),
-			Nonce:     startNonce,
-		}
-		startNonce++
-		if err := tx.Sign(kf.Priv); err != nil {
-			fmt.Fprintf(os.Stderr, "помилка підпису tx %d: %v\n", i, err)
-			os.Exit(1)
-		}
-		data, err := json.Marshal(tx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "помилка серіалізації tx %d: %v\n", i, err)
-			os.Exit(1)
-		}
-		txs[i] = data
-	}
+	initialNonce := fetchNonce(*node, kf.Pub)
+	nonceCounter := initialNonce
+	fmt.Printf("Поточний nonce: %d → починаємо з %d\n\n", initialNonce-1, initialNonce)
 
 	// Фаза 1: відправка
 	fmt.Printf("Відправляю %d транзакцій...\n", *count)
 	submitStart := time.Now()
 
-	jobs := make(chan []byte, *count)
-	for _, tx := range txs {
-		jobs <- tx
-	}
-	close(jobs)
-
 	var sent atomic.Int64
 	var errors atomic.Int64
+	var lastSentNonce atomic.Uint32
+	lastSentNonce.Store(initialNonce - 1)
 
 	workerDone := make(chan struct{}, *workers)
+	
+	// Розподіляємо кількість задач між воркерами
+	tasksPerWorker := *count / *workers
+	extraTasks := *count % *workers
+
 	for w := 0; w < *workers; w++ {
-		go func() {
+		numTasks := tasksPerWorker
+		if w < extraTasks {
+			numTasks++
+		}
+		
+		go func(nTasks int) {
 			client := &http.Client{Timeout: 5 * time.Second}
-			for tx := range jobs {
-				resp, err := client.Post(*node+"/tx", "application/json", bytes.NewReader(tx))
+			for i := 0; i < nTasks; i++ {
+				// Отримуємо унікальний nonce
+				currentNonce := atomic.AddUint32(&nonceCounter, 1) - 1
+				
+				tx := chain.Transaction{
+					From:      kf.Pub,
+					To:        toBytes,
+					Amount:    amount,
+					Timestamp: time.Now().UnixMilli(),
+					Nonce:     currentNonce,
+				}
+				
+				if err := tx.Sign(kf.Priv); err != nil {
+					errors.Add(1)
+					continue
+				}
+				
+				data, _ := json.Marshal(tx)
+				
+				resp, err := client.Post(*node+"/tx", "application/json", bytes.NewReader(data))
 				if err != nil {
 					errors.Add(1)
 					continue
 				}
 				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
+				
 				if resp.StatusCode == 200 {
 					sent.Add(1)
+					// Оновлюємо максимально відправлений nonce (приблизно)
+					for {
+						old := lastSentNonce.Load()
+						if currentNonce <= old {
+							break
+						}
+						if lastSentNonce.CompareAndSwap(old, currentNonce) {
+							break
+						}
+					}
 				} else {
 					errors.Add(1)
 				}
 			}
 			workerDone <- struct{}{}
-		}()
+		}(numTasks)
 	}
 
 	for w := 0; w < *workers; w++ {
@@ -128,6 +140,7 @@ func main() {
 	submitDur := time.Since(submitStart)
 	sentN := int(sent.Load())
 	errN := int(errors.Load())
+	maxNonce := lastSentNonce.Load()
 
 	fmt.Printf("Відправлено: %d/%d (помилок: %d) за %.2fs → %.1f tx/s (до API)\n\n",
 		sentN, *count, errN, submitDur.Seconds(),
@@ -143,7 +156,6 @@ func main() {
 	waitStart := time.Now()
 	deadline := waitStart.Add(*timeout)
 
-	targetNonce := initialNonce + uint32(sentN) - 1
 	lastHeight := uint32(0)
 	confirmedByBlock := make(map[uint32]int)
 
@@ -152,6 +164,9 @@ func main() {
 
 	var totalConfirmed int
 	var firstBlockTime time.Duration
+	
+	// Карта для відстеження підтверджених nonce
+	confirmedNonces := make(map[uint32]bool)
 
 	for time.Now().Before(deadline) {
 		<-ticker.C
@@ -162,23 +177,26 @@ func main() {
 				continue
 			}
 
-			txCount := 0
+			newConfirmations := 0
 			for _, tx := range b.Transactions {
-				if bytes.Equal(tx.From, kf.Pub) && tx.Nonce >= initialNonce && tx.Nonce <= targetNonce {
-					txCount++
+				if bytes.Equal(tx.From, kf.Pub) && tx.Nonce >= initialNonce && tx.Nonce <= maxNonce {
+					if !confirmedNonces[tx.Nonce] {
+						confirmedNonces[tx.Nonce] = true
+						newConfirmations++
+					}
 				}
 			}
 
-			if txCount > 0 {
+			if newConfirmations > 0 {
 				elapsed := time.Since(submitStart)
 				if firstBlockTime == 0 {
 					firstBlockTime = elapsed
 				}
-				confirmedByBlock[b.Height] = txCount
-				totalConfirmed += txCount
+				confirmedByBlock[b.Height] += newConfirmations
+				totalConfirmed += newConfirmations
 				ts := time.UnixMilli(b.Timestamp).Format("15:04:05.000")
-				fmt.Printf("  Блок #%-4d [%s] — %d txs підтверджено (+%.1fs від старту)\n",
-					b.Height, ts, txCount, elapsed.Seconds())
+				fmt.Printf("  Блок #%-4d [%s] — %d нових txs підтверджено (всього %d/%d, +%.1fs від старту)\n",
+					b.Height, ts, newConfirmations, totalConfirmed, sentN, elapsed.Seconds())
 				lastHeight = b.Height
 			}
 		}

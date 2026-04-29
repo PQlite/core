@@ -41,7 +41,6 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 
 	var txsToInclude []*chain.Transaction
 	for {
-		// Перевірка чи не змінився стан поки ми чекаємо
 		currentLastBlock, _ := n.bs.GetLastBlock()
 		if currentLastBlock.Height >= expectedHeight || n.currentRound != expectedRound {
 			return chain.Block{}, fmt.Errorf("стан змінився під час очікування транзакцій")
@@ -91,6 +90,7 @@ func (n *Node) addRewardTx(b *chain.Block) error {
 		From:      []byte(REWARDWALLET),
 		To:        n.keys.Pub,
 		Amount:    REWARD,
+		Fee:       0,
 		Timestamp: time.Now().UnixMilli(),
 		Nonce:     0,
 	}
@@ -145,8 +145,11 @@ func (n *Node) setNextProposer() error {
 	return nil
 }
 
+func (n *Node) isSystemAddr(addr []byte) bool {
+	return bytes.Equal(addr, []byte(REWARDWALLET)) || bytes.Equal(addr, []byte(STAKE))
+}
+
 func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transaction, []*chain.Transaction) {
-	// Сортуємо транзакції за Nonce, щоб обробляти їх у правильному порядку
 	sort.Slice(txs, func(i, j int) bool {
 		return txs[i].Nonce < txs[j].Nonce
 	})
@@ -158,6 +161,11 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 	balances := make(map[string]int64)
 
 	for _, tx := range txs {
+		if n.isSystemAddr(tx.From) {
+			toInclude = append(toInclude, tx)
+			continue
+		}
+
 		fromAddr := string(tx.From)
 		if _, ok := nonces[fromAddr]; !ok {
 			wallet, err := n.bs.GetWalletByAddress(tx.From)
@@ -198,6 +206,10 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 	balances := make(map[string]int64)
 
 	for _, tx := range txs {
+		if n.isSystemAddr(tx.From) {
+			continue
+		}
+
 		fromAddr := string(tx.From)
 		if _, ok := nonces[fromAddr]; !ok {
 			wallet, err := n.bs.GetWalletByAddress(tx.From)
@@ -212,7 +224,7 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 		currentBalance := balances[fromAddr]
 
 		if tx.Nonce != currentNonce+1 {
-			return fmt.Errorf("невірний Nonce транзакції: %d, очікується %d", tx.Nonce, currentNonce+1)
+			return fmt.Errorf("невірний Nonce транзакції: %d, очікується %d (гаманець: %x)", tx.Nonce, currentNonce+1, tx.From)
 		}
 
 		totalCost := tx.Amount + tx.Fee
@@ -228,7 +240,7 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 
 func (n *Node) updateBalancesNonces(b *chain.Block) error {
 	for _, tx := range b.Transactions {
-		if bytes.Equal(tx.From, []byte(STAKE)) || bytes.Equal(tx.From, []byte(REWARDWALLET)) {
+		if n.isSystemAddr(tx.From) {
 			walletTo, err := n.bs.GetWalletByAddress(tx.To)
 			if err != nil {
 				return err

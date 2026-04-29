@@ -25,11 +25,18 @@ type Block struct {
 	Signature    []byte         // Підпис Proposer'а на блоку
 }
 
-// sortTransactions сортує транзакції в блоці за їх підписами.
-// Це необхідно для детерміністичної серіалізації.
+// sortTransactions сортує транзакції в блоці детерміністично.
+// ВАЖЛИВО: сортування за (From, Nonce) гарантує, що транзакції одного гаманця
+// завжди йдуть у правильному порядку для перевірки Nonce.
 func (b *Block) sortTransactions() {
 	sort.Slice(b.Transactions, func(i, j int) bool {
-		return bytes.Compare(b.Transactions[i].Signature, b.Transactions[j].Signature) < 0
+		// Спочатку за адресою відправника
+		cmp := bytes.Compare(b.Transactions[i].From, b.Transactions[j].From)
+		if cmp != 0 {
+			return cmp < 0
+		}
+		// Якщо відправник той самий — за Nonce
+		return b.Transactions[i].Nonce < b.Transactions[j].Nonce
 	})
 }
 

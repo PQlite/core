@@ -158,8 +158,13 @@ func (n *Node) validateTxState(tx *chain.Transaction, nonces map[string]uint32, 
 	currentNonce := nonces[fromAddr]
 	currentBalance := balances[fromAddr]
 
-	if currentBalance < tx.Amount {
-		return fmt.Errorf("недостатній баланс для переказу: має %d, треба %d", currentBalance, tx.Amount)
+	totalCost := tx.Amount + tx.Fee
+	if currentBalance < totalCost {
+		return fmt.Errorf("недостатній баланс для переказу: має %s, треба %s (amount: %s, fee: %s)", 
+			chain.FormatAmount(currentBalance), 
+			chain.FormatAmount(totalCost),
+			chain.FormatAmount(tx.Amount),
+			chain.FormatAmount(tx.Fee))
 	}
 	
 	// For block inclusion, we only allow the EXACT next nonce.
@@ -170,7 +175,7 @@ func (n *Node) validateTxState(tx *chain.Transaction, nonces map[string]uint32, 
 
 	// Update state
 	nonces[fromAddr] = tx.Nonce
-	balances[fromAddr] = currentBalance - tx.Amount
+	balances[fromAddr] = currentBalance - totalCost
 
 	return nil
 }
@@ -187,21 +192,8 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 		if err == nil {
 			toInclude = append(toInclude, tx)
 		} else {
-			// If nonce is too high, we KEEP it in mempool for later.
-			// If it's something else (e.g. bad balance or bad signature or old nonce), we drop it.
-			
-			// We need to fetch original wallet state to check if it's truly invalid or just future
-			wallet, _ := n.bs.GetWalletByAddress(tx.From)
-			if wallet.Nonce >= tx.Nonce {
-				log.Warn().Err(err).Hex("tx", tx.Signature).Msg("dropping tx: nonce already processed or old")
-				toDrop = append(toDrop, tx)
-			} else if wallet.Balance < tx.Amount {
-				log.Warn().Err(err).Hex("tx", tx.Signature).Msg("dropping tx: insufficient balance")
-				toDrop = append(toDrop, tx)
-			} else {
-				// Potential future transaction or out of order - KEEP in mempool
-				log.Debug().Err(err).Hex("tx", tx.Signature).Msg("keeping tx in mempool: future nonce or temporary invalid")
-			}
+			log.Warn().Err(err).Hex("tx", tx.Signature).Msg("dropping invalid tx from mempool")
+			toDrop = append(toDrop, tx)
 		}
 	}
 	return toInclude, toDrop
@@ -243,7 +235,7 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 			return err
 		}
 
-		walletFrom.Balance -= tx.Amount
+		walletFrom.Balance -= (tx.Amount + tx.Fee)
 		walletTo.Balance += tx.Amount
 		walletFrom.Nonce++
 
@@ -252,6 +244,18 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 		}
 		if err := n.bs.UpdateBalance(&walletTo); err != nil {
 			return err
+		}
+
+		// Add Fee to reward wallet
+		if tx.Fee > 0 {
+			rewardWallet, err := n.bs.GetWalletByAddress([]byte(REWARDWALLET))
+			if err != nil {
+				return err
+			}
+			rewardWallet.Balance += tx.Fee
+			if err := n.bs.UpdateBalance(&rewardWallet); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -34,10 +34,12 @@ func main() {
 	workers := flag.Int("par", 4, "кількість паралельних воркерів відправки")
 	node := flag.String("node", defaultNode, "адреса ноди")
 	amountFloat := flag.Float64("amount", 1, "сума кожної транзакції")
+	feeFloat := flag.Float64("fee", 0.01, "комісія")
 	timeout := flag.Duration("timeout", 3*time.Second, "таймаут очікування підтвердження блоків")
 	flag.Parse()
 
 	amount := int64(*amountFloat * float64(chain.Precision))
+	fee := int64(*feeFloat * float64(chain.Precision))
 
 	kf := loadKey(*keyPath)
 
@@ -94,6 +96,7 @@ func main() {
 					From:      kf.Pub,
 					To:        toBytes,
 					Amount:    amount,
+					Fee:       fee,
 					Timestamp: time.Now().UnixMilli(),
 					Nonce:     currentNonce,
 				}

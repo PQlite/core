@@ -9,11 +9,15 @@
     <style>
         [x-cloak] { display: none !important; }
         .font-mono { font-family: 'ui-monospace', monospace; }
+        .copy-hint:hover { cursor: copy; text-decoration: underline; opacity: 0.8; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen font-sans">
     <div x-data="explorer()" x-init="init()" x-cloak class="container mx-auto px-4 py-8">
         
+        <!-- Toast Notification -->
+        <div x-show="toast.show" x-transition class="fixed bottom-8 right-8 z-[100] bg-green-600 text-white px-6 py-3 rounded-xl shadow-2xl font-bold" x-text="toast.message"></div>
+
         <!-- Header -->
         <header class="flex flex-col md:flex-row justify-between items-center mb-12 space-y-4 md:space-y-0">
             <div class="flex items-center space-x-4">
@@ -24,13 +28,13 @@
                 </div>
                 <div>
                     <h1 class="text-3xl font-bold tracking-tight">PQlite <span class="text-blue-500">Explorer</span></h1>
-                    <p class="text-gray-400 text-sm">Lightweight Post-Quantum Blockchain</p>
+                    <p class="text-gray-400 text-sm">Post-Quantum Blockchain Node</p>
                 </div>
             </div>
             
             <div class="relative w-full md:w-96">
                 <input type="text" x-model="searchQuery" @keyup.enter="search()" placeholder="Search height or address..." 
-                    class="w-full bg-gray-800 border border-gray-700 text-white rounded-full py-2 px-6 pl-12 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    class="w-full bg-gray-800 border border-gray-700 text-white rounded-full py-2 px-6 pl-12 focus:ring-2 focus:ring-blue-500 outline-none">
                 <div class="absolute left-4 top-2.5 text-gray-500">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -40,44 +44,47 @@
         </header>
 
         <!-- Stats -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8 text-center md:text-left">
             <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-sm">
-                <p class="text-gray-400 text-xs uppercase mb-1">Last Block</p>
+                <p class="text-gray-400 text-[10px] uppercase mb-1">Height</p>
                 <p class="text-2xl font-bold" x-text="stats.lastHeight">0</p>
             </div>
             <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-sm">
-                <p class="text-gray-400 text-xs uppercase mb-1">Mempool</p>
+                <p class="text-gray-400 text-[10px] uppercase mb-1">Mempool</p>
                 <p class="text-2xl font-bold" x-text="stats.mempoolSize">0</p>
             </div>
             <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-sm">
-                <p class="text-gray-400 text-xs uppercase mb-1">Network</p>
-                <div class="flex items-center"><div class="h-3 w-3 rounded-full bg-green-500 mr-2 animate-pulse"></div><p class="text-xl font-semibold">Online</p></div>
+                <p class="text-gray-400 text-[10px] uppercase mb-1">Round</p>
+                <p class="text-2xl font-bold text-yellow-500" x-text="stats.currentRound">0</p>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-sm lg:col-span-2">
+                <p class="text-gray-400 text-[10px] uppercase mb-1">Next Proposer</p>
+                <p class="text-sm font-mono text-blue-400 truncate copy-hint" @click="copy(stats.nextProposer)" x-text="displayAddr(stats.nextProposer)"></p>
             </div>
             <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-sm">
-                <p class="text-gray-400 text-xs uppercase mb-1">Blocks Loaded</p>
-                <p class="text-2xl font-bold" x-text="blocks.length">0</p>
+                <p class="text-gray-400 text-[10px] uppercase mb-1">Status</p>
+                <div class="flex items-center justify-center md:justify-start"><div class="h-3 w-3 rounded-full bg-green-500 mr-2 animate-pulse"></div><p class="font-semibold">Online</p></div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <!-- Blocks -->
             <div class="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden shadow-xl">
-                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-                    <h2 class="text-xl font-bold">Latest Blocks</h2>
+                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-750">
+                    <h2 class="text-xl font-bold">Blocks</h2>
                     <button @click="fetchData()" class="text-blue-500 hover:text-blue-400 text-sm">Refresh</button>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
-                        <thead class="bg-gray-900/50 text-gray-400 text-xs uppercase">
-                            <tr><th class="px-6 py-3">Height</th><th class="px-6 py-3">Hash</th><th class="px-6 py-3">TXs</th><th class="px-6 py-3">Time</th></tr>
+                        <thead class="bg-gray-900/50 text-gray-400 text-[10px] uppercase">
+                            <tr><th class="px-4 py-3">Height</th><th class="px-4 py-3">Hash</th><th class="px-4 py-3 text-right">Time</th></tr>
                         </thead>
                         <tbody class="divide-y divide-gray-700">
                             <template x-for="block in blocks.slice().reverse().slice(0, blocksLimit)" :key="block.Height">
                                 <tr class="hover:bg-gray-700/50 cursor-pointer" @click="showBlockDetails(block)">
-                                    <td class="px-6 py-4 font-bold text-blue-400" x-text="'#'+block.Height"></td>
-                                    <td class="px-6 py-4 font-mono text-xs text-gray-400" x-text="truncateHash(block.Hash)"></td>
-                                    <td class="px-6 py-4 text-sm" x-text="block.Transactions ? block.Transactions.length : 0"></td>
-                                    <td class="px-6 py-4 text-xs text-gray-500" x-text="formatTime(block.Timestamp)"></td>
+                                    <td class="px-4 py-4 font-bold text-blue-400" x-text="'#'+block.Height"></td>
+                                    <td class="px-4 py-4 font-mono text-xs text-gray-400 copy-hint" @click.stop="copy(block.Hash)" x-text="truncateHash(block.Hash)"></td>
+                                    <td class="px-4 py-4 text-[10px] text-gray-500 text-right" x-text="formatTime(block.Timestamp)"></td>
                                 </tr>
                             </template>
                         </tbody>
@@ -90,18 +97,53 @@
 
             <!-- Transactions -->
             <div class="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden shadow-xl">
-                <div class="px-6 py-4 border-b border-gray-700"><h2 class="text-xl font-bold">Recent Transactions</h2></div>
+                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-750">
+                    <h2 class="text-xl font-bold">Recent TXs</h2>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
-                        <thead class="bg-gray-900/50 text-gray-400 text-xs uppercase">
-                            <tr><th class="px-6 py-3">From</th><th class="px-6 py-3">To</th><th class="px-6 py-3 text-right">Amount</th></tr>
+                        <thead class="bg-gray-900/50 text-gray-400 text-[10px] uppercase">
+                            <tr><th class="px-4 py-3">From / To</th><th class="px-4 py-3 text-right">Amount</th></tr>
                         </thead>
                         <tbody class="divide-y divide-gray-700">
-                            <template x-for="(tx, index) in recentTxs.slice(0, 15)" :key="getTxKey(tx, index)">
+                            <template x-for="(tx, idx) in recentTxs.slice(0, 15)" :key="getTxKey(tx, idx)">
                                 <tr class="hover:bg-gray-700/50 cursor-pointer" @click="showTxDetails(tx)">
-                                    <td class="px-6 py-4 font-mono text-xs text-gray-400" x-text="displayAddr(tx.from)"></td>
-                                    <td class="px-6 py-4 font-mono text-xs text-gray-400" x-text="displayAddr(tx.to)"></td>
-                                    <td class="px-6 py-4 text-right text-green-400 font-bold" x-text="formatAmount(tx.amount)"></td>
+                                    <td class="px-4 py-4 font-mono text-[10px] text-gray-400 leading-tight">
+                                        <div class="copy-hint" @click.stop="copy(tx.from)" x-text="displayAddr(tx.from)"></div>
+                                        <div class="text-gray-600 mt-1">→ <span class="copy-hint" @click.stop="copy(tx.to)" x-text="displayAddr(tx.to)"></span></div>
+                                    </td>
+                                    <td class="px-4 py-4 text-right text-green-400 font-bold text-xs" x-text="formatAmount(tx.amount)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Validators -->
+            <div class="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden shadow-xl">
+                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-750">
+                    <h2 class="text-xl font-bold">Validators</h2>
+                    <span class="text-xs bg-gray-700 px-2 py-1 rounded text-gray-400" x-text="validators.length"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-900/50 text-gray-400 text-[10px] uppercase">
+                            <tr><th class="px-4 py-3">Validator</th><th class="px-4 py-3 text-right">Stake/Bal</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700">
+                            <template x-for="(val, idx) in validators" :key="val.address || idx">
+                                <tr class="hover:bg-gray-700/50 cursor-pointer" @click="searchAddr(val.address)">
+                                    <td class="px-4 py-4">
+                                        <div class="flex items-center">
+                                            <div class="h-2 w-2 rounded-full bg-blue-500 mr-2" :class="stats.nextProposer === val.address ? 'animate-pulse bg-yellow-500' : ''"></div>
+                                            <span class="font-mono text-xs text-gray-300 copy-hint" @click.stop="copy(val.address)" x-text="truncateHash(val.address)"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-4 text-right">
+                                        <div class="text-blue-400 font-bold text-[11px]" x-text="formatAmount(val.stake) + ' S'"></div>
+                                        <div class="text-gray-500 text-[10px]" x-text="formatAmount(val.balance) + ' B'"></div>
+                                    </td>
                                 </tr>
                             </template>
                         </tbody>
@@ -110,27 +152,35 @@
             </div>
         </div>
 
-        <!-- Block Details Modal -->
+        <!-- Modals Section -->
+        
+        <!-- Block Details -->
         <div x-show="selectedBlock" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" @click.self="selectedBlock = null">
             <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-                    <h3 class="text-xl font-bold">Block #<span x-text="selectedBlock?.Height"></span> Details</h3>
-                    <button @click="selectedBlock = null" class="text-2xl text-gray-400 hover:text-white">&times;</button>
+                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-750">
+                    <h3 class="text-xl font-bold">Block #<span x-text="selectedBlock?.Height"></span></h3>
+                    <button @click="selectedBlock = null" class="text-3xl text-gray-400 hover:text-white">&times;</button>
                 </div>
                 <div class="p-6 overflow-y-auto">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-sm">
-                        <div><p class="text-gray-500 uppercase text-xs">Hash</p><p class="font-mono text-blue-400 break-all" x-text="selectedBlock?.Hash"></p></div>
-                        <div><p class="text-gray-500 uppercase text-xs">Time (ISO 8601)</p><p x-text="fullDate(selectedBlock?.Timestamp)"></p></div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-sm">
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 cursor-pointer group" @click="copy(selectedBlock?.Hash)">
+                            <p class="text-gray-500 uppercase text-[10px] font-bold mb-1">Block Hash <span class="text-blue-500 opacity-0 group-hover:opacity-100 ml-2">Click to copy</span></p>
+                            <p class="font-mono text-blue-400 break-all text-xs" x-text="selectedBlock?.Hash"></p>
+                        </div>
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700">
+                            <p class="text-gray-500 uppercase text-[10px] font-bold mb-1">Timestamp (ISO 8601)</p>
+                            <p class="text-white text-xs" x-text="fullDate(selectedBlock?.Timestamp)"></p>
+                        </div>
                     </div>
-                    <h4 class="font-bold mb-4">Transactions (<span x-text="selectedBlock?.Transactions?.length || 0"></span>)</h4>
+                    <h4 class="font-bold mb-4 uppercase text-[10px] text-gray-500 tracking-widest">Transactions (<span x-text="selectedBlock?.Transactions?.length || 0"></span>)</h4>
                     <div class="space-y-2">
-                        <template x-for="(tx, index) in selectedBlock?.Transactions" :key="getTxKey(tx, index)">
-                            <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex justify-between items-center hover:border-blue-500 cursor-pointer" @click="showTxDetails(tx)">
+                        <template x-for="(tx, idx) in selectedBlock?.Transactions" :key="getTxKey(tx, idx)">
+                            <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 flex justify-between items-center hover:border-blue-500 cursor-pointer transition-colors" @click="showTxDetails(tx)">
                                 <div>
-                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded mr-2" :class="getTxType(tx).class" x-text="getTxType(tx).label"></span>
-                                    <span class="text-xs font-mono text-gray-400" x-text="displayAddr(tx.from) + ' -> ' + displayAddr(tx.to)"></span>
+                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded mr-3" :class="getTxType(tx).class" x-text="getTxType(tx).label"></span>
+                                    <span class="text-xs font-mono text-gray-400" x-text="displayAddr(tx.from) + ' → ' + displayAddr(tx.to)"></span>
                                 </div>
-                                <div class="text-white font-bold" x-text="formatAmount(tx.amount) + ' PQL'"></div>
+                                <div class="text-white font-bold text-sm" x-text="formatAmount(tx.amount) + ' PQL'"></div>
                             </div>
                         </template>
                     </div>
@@ -138,45 +188,71 @@
             </div>
         </div>
 
-        <!-- Transaction Details Modal -->
+        <!-- Transaction Details -->
         <div x-show="selectedTx" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md" @click.self="selectedTx = null">
-            <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-xl shadow-2xl p-6 flex flex-col max-h-[90vh]">
-                <div class="flex justify-between items-center mb-6">
+            <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-xl shadow-2xl p-6">
+                <div class="flex justify-between items-center mb-8">
                     <h3 class="text-xl font-bold text-green-500">Transaction Info</h3>
-                    <button @click="selectedTx = null" class="text-2xl text-gray-400 hover:text-white">&times;</button>
+                    <button @click="selectedTx = null" class="text-3xl text-gray-400 hover:text-white">&times;</button>
                 </div>
-                <div class="space-y-4 overflow-y-auto">
-                    <div class="text-center py-4">
-                        <p class="text-4xl font-black text-white" x-text="formatAmount(selectedTx?.amount) + ' PQL'"></p>
+                <div class="space-y-6">
+                    <div class="text-center py-6 bg-gray-900/50 rounded-2xl border border-gray-700">
+                        <p class="text-5xl font-black text-white" x-text="formatAmount(selectedTx?.amount)"></p>
+                        <p class="text-blue-500 font-bold mt-2 uppercase tracking-widest text-xs">PQlite (PQL)</p>
                     </div>
                     <div class="space-y-3 text-sm">
-                        <div class="bg-gray-900/50 p-3 rounded-lg"><p class="text-xs text-gray-500">FROM</p><p class="font-mono break-all text-gray-300" x-text="selectedTx?.from"></p></div>
-                        <div class="bg-gray-900/50 p-3 rounded-lg"><p class="text-xs text-gray-500">TO</p><p class="font-mono break-all text-gray-300" x-text="selectedTx?.to"></p></div>
-                        <div class="flex gap-4">
-                            <div class="bg-gray-900/50 p-3 rounded-lg flex-1"><p class="text-xs text-gray-500">NONCE</p><p x-text="selectedTx?.nonce"></p></div>
-                            <div class="bg-gray-900/50 p-3 rounded-lg flex-1"><p class="text-xs text-gray-500">TIME (ISO)</p><p class="text-xs" x-text="fullDate(selectedTx?.timestamp)"></p></div>
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 group cursor-pointer" @click="copy(selectedTx?.from)">
+                            <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Sender (From)</p>
+                            <p class="font-mono break-all text-gray-300 text-xs" x-text="selectedTx?.from"></p>
                         </div>
-                        <div class="bg-gray-900/50 p-3 rounded-lg" x-show="selectedTx?.signature && selectedTx?.signature !== '0x'"><p class="text-xs text-gray-500 uppercase">Signature</p><p class="font-mono text-[10px] break-all text-gray-500" x-text="selectedTx?.signature"></p></div>
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 group cursor-pointer" @click="copy(selectedTx?.to)">
+                            <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Receiver (To)</p>
+                            <p class="font-mono break-all text-gray-300 text-xs" x-text="selectedTx?.to"></p>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 flex-1">
+                                <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Fee</p>
+                                <p class="font-bold text-yellow-500" x-text="formatAmount(selectedTx?.fee) + ' PQL'"></p>
+                            </div>
+                            <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 flex-1">
+                                <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Nonce</p>
+                                <p class="font-bold text-white" x-text="selectedTx?.nonce"></p>
+                            </div>
+                        </div>
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700">
+                            <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Time</p>
+                            <p class="text-xs text-white" x-text="fullDate(selectedTx?.timestamp)"></p>
+                        </div>
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 cursor-pointer" @click="copy(selectedTx?.signature)" x-show="selectedTx?.signature">
+                            <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Digital Signature</p>
+                            <p class="font-mono text-[9px] break-all text-gray-500" x-text="selectedTx?.signature"></p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Address Modal -->
+        <!-- Address Info Modal -->
         <div x-show="selectedAddr" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" @click.self="selectedAddr = null">
             <div class="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-lg shadow-2xl p-8 text-center">
-                <div class="flex justify-between items-center mb-6">
+                <div class="flex justify-between items-center mb-8">
                     <h3 class="text-xl font-bold">Wallet Details</h3>
-                    <button @click="selectedAddr = null" class="text-2xl text-gray-400 hover:text-white">&times;</button>
+                    <button @click="selectedAddr = null" class="text-3xl text-gray-400 hover:text-white">&times;</button>
                 </div>
-                <div class="bg-blue-600/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+                <div class="bg-blue-600/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
                 </div>
-                <p class="text-gray-500 text-xs font-bold uppercase mb-1">Balance</p>
-                <h4 class="text-4xl font-black text-white mb-6"><span x-text="formatAmount(selectedAddr?.Balance)"></span> <span class="text-blue-500 text-2xl">PQL</span></h4>
-                <div class="bg-gray-900/80 p-4 rounded-xl text-left space-y-3">
-                    <div><p class="text-[10px] text-gray-500 uppercase font-bold">Address</p><p class="font-mono text-xs text-gray-300 break-all" x-text="selectedAddrHash"></p></div>
-                    <div class="flex justify-between border-t border-gray-700 pt-3"><span class="text-xs text-gray-500">NONCE</span><span class="font-bold" x-text="selectedAddr?.Nonce || 0"></span></div>
+                <p class="text-gray-500 text-xs font-bold uppercase mb-2 tracking-widest">Available Balance</p>
+                <h4 class="text-5xl font-black text-white mb-8"><span x-text="formatAmount(getVal(selectedAddr, 'balance'))"></span> <span class="text-blue-500 text-2xl">PQL</span></h4>
+                <div class="bg-gray-900/80 p-6 rounded-2xl border border-gray-700 text-left space-y-4">
+                    <div class="cursor-pointer group" @click="copy(selectedAddrHash)">
+                        <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Address <span class="text-blue-500 opacity-0 group-hover:opacity-100 ml-2">Click to copy</span></p>
+                        <p class="font-mono text-xs text-gray-300 break-all" x-text="selectedAddrHash"></p>
+                    </div>
+                    <div class="flex justify-between border-t border-gray-700 pt-4">
+                        <span class="text-xs text-gray-500 font-bold">CURRENT NONCE</span>
+                        <span class="font-bold text-white" x-text="getVal(selectedAddr, 'nonce') || 0"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -185,58 +261,106 @@
     <script>
         function explorer() {
             return {
-                blocks: [], recentTxs: [], blocksLimit: 10,
-                stats: { lastHeight: 0, mempoolSize: 0 },
-                searchQuery: '', selectedBlock: null, selectedTx: null,
-                selectedAddr: null, selectedAddrHash: '',
+                blocks: [], recentTxs: [], validators: [], blocksLimit: 10,
+                stats: { lastHeight: 0, mempoolSize: 0, currentRound: 0, nextProposer: '' },
+                searchQuery: '', selectedBlock: null, selectedTx: null, selectedAddr: null, selectedAddrHash: '',
+                toast: { show: false, message: '' },
                 
                 async init() {
                     await this.fetchData();
                     setInterval(() => this.fetchData(), 5000);
                 },
 
+                copy(text) {
+                    if (!text) return;
+                    navigator.clipboard.writeText(text).then(() => {
+                        this.toast.message = 'Copied!';
+                        this.toast.show = true;
+                        setTimeout(() => this.toast.show = false, 2000);
+                    });
+                },
+
                 async fetchData() {
                     try {
-                        const [bRes, lRes, mRes] = await Promise.all([fetch('/blocks'), fetch('/lastBlock'), fetch('/txs')]);
+                        const [bRes, lRes, mRes, pRes, rRes, vRes] = await Promise.all([
+                            fetch('/blocks'), fetch('/lastBlock'), fetch('/txs'),
+                            fetch('/nextProposer'), fetch('/currentRound'), fetch('/validators')
+                        ]);
+                        
                         if (bRes.ok) {
                             const raw = await bRes.json();
                             this.blocks = raw.map(b => this.formatBlock(b));
-                            
                             let allTxs = [];
                             this.blocks.slice().reverse().forEach(b => {
                                 (b.Transactions || []).forEach(tx => {
-                                    if (!this.isSystem(tx.from) && !this.isSystem(tx.to)) allTxs.push(tx);
+                                    if (!this.isSystem(this.getVal(tx, 'from')) && !this.isSystem(this.getVal(tx, 'to'))) {
+                                        allTxs.push(tx);
+                                    }
                                 });
                             });
                             this.recentTxs = allTxs.slice(0, 20);
                         }
+                        
                         if (lRes.ok) this.stats.lastHeight = (await lRes.json()).Height;
                         if (mRes.ok) this.stats.mempoolSize = (await mRes.json() || []).length;
+                        if (rRes.ok) this.stats.currentRound = await rRes.json();
+                        
+                        if (pRes.ok) {
+                            const p = await pRes.json();
+                            this.stats.nextProposer = this.toHex(p.Address || p.address);
+                        }
+                        
+                        if (vRes.ok) {
+                            const vList = await vRes.json();
+                            this.validators = (vList || []).map(v => {
+                                const addr = this.toHex(this.getVal(v, 'address'));
+                                return {
+                                    address: addr,
+                                    stake: this.getVal(v, 'stake') || 0,
+                                    balance: this.getVal(v, 'balance') || 0
+                                };
+                            }).sort((a,b) => b.stake - a.stake);
+                        }
                     } catch (e) { console.error(e); }
+                },
+
+                // Helper to get value regardless of case (Balance vs balance)
+                getVal(obj, key) {
+                    if (!obj) return null;
+                    const lowKey = key.toLowerCase();
+                    const upKey = key.charAt(0).toUpperCase() + key.slice(1);
+                    return obj[lowKey] !== undefined ? obj[lowKey] : obj[upKey];
                 },
 
                 formatAmount(v) {
                     if (v === undefined || v === null) return '0.00';
-                    const val = parseFloat(v) / 100;
-                    return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    return (parseFloat(v) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 },
 
                 formatBlock(b) {
-                    return {
-                        ...b,
-                        Hash: this.toHex(b.Hash),
-                        PrevHash: this.toHex(b.PrevHash),
-                        Transactions: (b.Transactions || []).map(tx => ({
+                    const hash = this.getVal(b, 'hash');
+                    const prev = this.getVal(b, 'prevHash');
+                    const txs = this.getVal(b, 'transactions') || [];
+                    return { 
+                        ...b, 
+                        Hash: this.toHex(hash), 
+                        PrevHash: this.toHex(prev),
+                        Transactions: txs.map(tx => ({
                             ...tx,
-                            from: this.toHex(tx.from),
-                            to: this.toHex(tx.to),
-                            signature: this.toHex(tx.signature)
+                            from: this.toHex(this.getVal(tx, 'from')),
+                            to: this.toHex(this.getVal(tx, 'to')),
+                            signature: this.toHex(this.getVal(tx, 'signature')),
+                            amount: this.getVal(tx, 'amount'),
+                            fee: this.getVal(tx, 'fee'),
+                            nonce: this.getVal(tx, 'nonce'),
+                            timestamp: this.getVal(tx, 'timestamp')
                         }))
                     };
                 },
 
                 toHex(b64) {
-                    if (!b64 || typeof b64 !== 'string' || b64.startsWith('0x')) return b64;
+                    if (!b64 || typeof b64 !== 'string') return b64 || '';
+                    if (/^[0-9a-fA-F]+$/.test(b64)) return b64;
                     try {
                         const bin = atob(b64);
                         let h = '';
@@ -244,19 +368,21 @@
                             const hex = bin.charCodeAt(i).toString(16);
                             h += hex.length === 1 ? '0' + hex : hex;
                         }
-                        return '0x' + h;
+                        return h;
                     } catch { return b64; }
                 },
 
                 isSystem(addr) {
+                    if (!addr) return false;
                     const h = String(addr).toLowerCase();
-                    return h === '0x726577617264' || h === '0x7374616b65' || h === 'reward' || h === 'stake';
+                    return h === '726577617264' || h === '7374616b65' || h === 'reward' || h === 'stake';
                 },
 
                 displayAddr(addr) {
+                    if (!addr) return 'n/a';
                     const h = String(addr).toLowerCase();
-                    if (h === '0x726577617264') return 'SYSTEM (Reward)';
-                    if (h === '0x7374616b65') return 'SYSTEM (Stake)';
+                    if (h === '726577617264') return 'SYSTEM (Reward)';
+                    if (h === '7374616b65') return 'SYSTEM (Stake)';
                     return this.truncateHash(addr);
                 },
 
@@ -266,13 +392,14 @@
                     return { label: 'TRANSFER', class: 'text-green-500 bg-green-500/10' };
                 },
 
-                getTxKey(tx, index) {
-                    return (tx.signature && tx.signature !== '0x') ? tx.signature : `tx-${tx.nonce}-${tx.from}-${index}`;
+                getTxKey(tx, index) { 
+                    const sig = this.getVal(tx, 'signature');
+                    return (sig && sig !== '') ? sig : `tx-${this.getVal(tx, 'nonce')}-${index}`; 
                 },
 
-                truncateHash(h) {
-                    const s = String(h);
-                    return s.length > 15 ? s.substring(0, 10) + '...' + s.substring(s.length - 4) : s;
+                truncateHash(h) { 
+                    const s = String(h); 
+                    return s.length > 12 ? s.substring(0, 8) + '...' + s.substring(s.length - 4) : s; 
                 },
 
                 formatTime(ts) {
@@ -280,7 +407,8 @@
                     const d = new Date(ts > 1e12 ? ts : ts * 1000);
                     const diff = Math.floor((Date.now() - d) / 1000);
                     if (diff < 60) return diff + 's ago';
-                    return Math.floor(diff / 60) + 'm ago';
+                    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+                    return Math.floor(diff / 3600) + 'h ago';
                 },
 
                 fullDate(ts) {
@@ -290,19 +418,24 @@
                 },
 
                 async search() {
-                    const q = this.searchQuery.trim();
+                    let q = this.searchQuery.trim();
                     if (!q) return;
-                    if (!isNaN(q)) {
+                    if (/^\d+$/.test(q)) {
                         const res = await fetch('/block/' + q);
-                        if (res.ok) this.selectedBlock = this.formatBlock(await res.json());
-                    } else {
-                        const res = await fetch('/addr/' + q);
-                        if (res.ok) {
-                            this.selectedAddr = await res.json();
-                            this.selectedAddrHash = q;
-                        }
+                        if (res.ok) { this.selectedBlock = this.formatBlock(await res.json()); this.searchQuery = ''; return; }
                     }
+                    await this.searchAddr(q);
                     this.searchQuery = '';
+                },
+
+                async searchAddr(q) {
+                    if (!q) return;
+                    let addrQ = q.toString().startsWith('0x') ? q.substring(2) : q;
+                    const res = await fetch('/addr/' + addrQ);
+                    if (res.ok) {
+                        this.selectedAddr = await res.json();
+                        this.selectedAddrHash = addrQ;
+                    }
                 },
 
                 showBlockDetails(b) { this.selectedBlock = b; },

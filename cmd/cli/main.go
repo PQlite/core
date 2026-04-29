@@ -60,7 +60,7 @@ func printHelp() {
 Команди:
   keygen  [-out <файл>]                           Згенерувати новий ключ
   balance <hex_адреса>  [-node <url>]             Перевірити баланс
-  send    -to <hex_адреса> -amount <n>            Відправити транзакцію
+  send    -to <hex_адреса> -amount <n> [-fee <n>]
           [-key <файл>] [-nonce <n>] [-node <url>]
   block   <висота>  [-node <url>]                 Отримати блок
   blocks  [-node <url>]                           Список усіх блоків
@@ -133,6 +133,7 @@ func cmdSend(args []string) {
 	keyPath := fs.String("key", defaultKeyFile, "файл з ключами")
 	toHex := fs.String("to", "", "адреса отримувача (hex)")
 	amountFloat := fs.Float64("amount", 0, "сума")
+	feeFloat := fs.Float64("fee", 0.01, "комісія")
 	nonceFlag := fs.Uint("nonce", 0, "nonce (0 = автоматично)")
 	node := fs.String("node", defaultNode, "адреса ноди")
 	fs.Parse(args)
@@ -144,6 +145,7 @@ func cmdSend(args []string) {
 	}
 
 	amount := int64(*amountFloat * float64(chain.Precision))
+	fee := int64(*feeFloat * float64(chain.Precision))
 
 	kf := loadKey(*keyPath)
 
@@ -159,6 +161,7 @@ func cmdSend(args []string) {
 		From:      kf.Pub,
 		To:        toBytes,
 		Amount:    amount,
+		Fee:       fee,
 		Timestamp: time.Now().UnixMilli(),
 		Nonce:     nonce,
 	}
@@ -181,6 +184,7 @@ func cmdSend(args []string) {
 	fmt.Printf("Від:   %s\n", hex.EncodeToString(kf.Pub))
 	fmt.Printf("Кому:  %s\n", *toHex)
 	fmt.Printf("Сума:  %s PQL\n", chain.FormatAmount(amount))
+	fmt.Printf("Комісія: %s PQL\n", chain.FormatAmount(fee))
 	fmt.Printf("Nonce: %d\n", nonce)
 }
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -69,6 +70,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/txs", s.handleGetMempoolLen)
 	s.app.Get("/blocks", s.handleGetAllBlocks)
 	s.app.Get("/addr/:id", s.handleGetBalance)
+	s.app.Get("/validators", s.handleGetValidators)
 	s.app.Get("/lastBlock", s.handleGetLastBlock)
 	s.app.Get("/nextProposer", s.handleGetNextProposer)
 	s.app.Get("/currentRound", s.handleGetCurrentRound)
@@ -157,6 +159,7 @@ func (s *Server) handleGetMempoolLen(c *fiber.Ctx) error {
 
 func (s *Server) handleGetBalance(c *fiber.Ctx) error {
 	addr := c.Params("id")
+	addr = strings.TrimPrefix(addr, "0x")
 	addrBytes, err := hex.DecodeString(addr)
 	if err != nil {
 		// Try base64 if hex fails
@@ -185,6 +188,33 @@ func (s *Server) handleGetLastBlock(c *fiber.Ctx) error {
 		})
 	}
 	return c.JSON(lastBlock)
+}
+
+func (s *Server) handleGetValidators(c *fiber.Ctx) error {
+	validators, err := s.bs.GetValidatorsList()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	type ValidatorWithBalance struct {
+		Address []byte `json:"address"`
+		Stake   int64  `json:"stake"`
+		Balance int64  `json:"balance"`
+	}
+
+	var res []ValidatorWithBalance
+	for _, v := range *validators {
+		wallet, _ := s.bs.GetWalletByAddress(v.Address)
+		res = append(res, ValidatorWithBalance{
+			Address: v.Address,
+			Stake:   v.Amount,
+			Balance: wallet.Balance,
+		})
+	}
+
+	return c.JSON(res)
 }
 
 func (s *Server) handleGetNextProposer(c *fiber.Ctx) error {

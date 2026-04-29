@@ -34,7 +34,8 @@ func (t Transaction) GetUnsignTransaction() *Transaction {
 }
 
 func (t *Transaction) Sign(priv []byte) error {
-	data, err := json.Marshal(t)
+	unTx := t.GetUnsignTransaction()
+	data, err := json.Marshal(unTx)
 	if err != nil {
 		return err
 	}

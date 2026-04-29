@@ -198,19 +198,13 @@ func (s *Server) handleGetValidators(c *fiber.Ctx) error {
 		})
 	}
 
-	type ValidatorWithBalance struct {
-		Address []byte `json:"address"`
-		Stake   int64  `json:"stake"`
-		Balance int64  `json:"balance"`
-	}
-
-	var res []ValidatorWithBalance
+	var res []fiber.Map
 	for _, v := range *validators {
 		wallet, _ := s.bs.GetWalletByAddress(v.Address)
-		res = append(res, ValidatorWithBalance{
-			Address: v.Address,
-			Stake:   v.Amount,
-			Balance: wallet.Balance,
+		res = append(res, fiber.Map{
+			"address": v.Address,
+			"stake":   v.Amount,
+			"balance": wallet.Balance,
 		})
 	}
 

@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -29,7 +30,7 @@ type keyFile struct {
 
 func main() {
 	keyPath := flag.String("key", defaultKeyFile, "файл з ключами відправника")
-	toHex := flag.String("to", "", "адреса отримувача hex (за замовчуванням — сам собі)")
+	toHex := flag.String("to", "", "адреса отримувача hex (якщо пуста — 10 випадкових)")
 	count := flag.Int("count", 100, "кількість транзакцій")
 	workers := flag.Int("par", 4, "кількість паралельних воркерів відправки")
 	node := flag.String("node", defaultNode, "адреса ноди")
@@ -43,21 +44,30 @@ func main() {
 
 	kf := loadKey(*keyPath)
 
-	var toBytes []byte
+	var recipients [][]byte
 	if *toHex == "" {
-		toBytes = kf.Pub
+		fmt.Printf("Генерую 10 випадкових адрес отримувачів...\n")
+		for i := 0; i < 10; i++ {
+			addr := make([]byte, 32)
+			rand.Read(addr)
+			recipients = append(recipients, addr)
+		}
 	} else {
-		var err error
-		toBytes, err = hex.DecodeString(*toHex)
+		toBytes, err := hex.DecodeString(*toHex)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "невірна hex адреса: %v\n", err)
 			os.Exit(1)
 		}
+		recipients = append(recipients, toBytes)
 	}
 
 	fmt.Printf("=== PQlite Throughput Bench ===\n")
-	fmt.Printf("Від:      %s\n", hex.EncodeToString(kf.Pub))
-	fmt.Printf("Кому:     %s\n", hex.EncodeToString(toBytes))
+	fmt.Printf("Від:       %s\n", hex.EncodeToString(kf.Pub))
+	if len(recipients) == 1 {
+		fmt.Printf("Кому:      %s\n", hex.EncodeToString(recipients[0]))
+	} else {
+		fmt.Printf("Кому:      %d випадкових адрес\n", len(recipients))
+	}
 	fmt.Printf("Транзакцій: %d (по %s PQL), паралельно: %d\n\n", *count, chain.FormatAmount(amount), *workers)
 
 	// Поточний nonce
@@ -91,10 +101,11 @@ func main() {
 			for i := 0; i < nTasks; i++ {
 				// Отримуємо унікальний nonce
 				currentNonce := atomic.AddUint32(&nonceCounter, 1) - 1
+				targetAddr := recipients[int(currentNonce)%len(recipients)]
 				
 				tx := chain.Transaction{
 					From:      kf.Pub,
-					To:        toBytes,
+					To:        targetAddr,
 					Amount:    amount,
 					Fee:       fee,
 					Timestamp: time.Now().UnixMilli(),

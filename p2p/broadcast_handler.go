@@ -78,12 +78,6 @@ func (n *Node) processBlockProposalCommit() {
 
 		case <-timerCh:
 			// Proposer не надіслав блок вчасно.
-			// Якщо ця нода сама є proposer-ом — вона просто ще не отримала транзакцій,
-			// тому пропускаємо таймаут щоб не відхиляти себе.
-			if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
-				timer, timerCh = restartTimer(timer, proposalTimeout)
-				continue
-			}
 			log.Warn().
 				Hex("proposer", n.nextProposer.Address).
 				Uint32("round", n.currentRound).

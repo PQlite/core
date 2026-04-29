@@ -32,11 +32,20 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 	if err != nil {
 		return chain.Block{}, fmt.Errorf("помилка отримання останнього блоку: %w", err)
 	}
+	
+	expectedHeight := lastBlock.Height + 1
+	expectedRound := n.currentRound
 
-	log.Info().Msg("очікування транзакцій для нового блоку")
+	log.Info().Uint32("height", expectedHeight).Uint32("round", expectedRound).Msg("очікування транзакцій для нового блоку")
 
 	var txsToInclude []*chain.Transaction
 	for {
+		// Перевірка чи не змінився стан поки ми чекаємо
+		currentLastBlock, _ := n.bs.GetLastBlock()
+		if currentLastBlock.Height >= expectedHeight || n.currentRound != expectedRound {
+			return chain.Block{}, fmt.Errorf("стан змінився під час очікування транзакцій")
+		}
+
 		mempoolTXs := n.mempool.GetTransactions()
 		var toDrop []*chain.Transaction
 		txsToInclude, toDrop = n.getValidTransactions(mempoolTXs)

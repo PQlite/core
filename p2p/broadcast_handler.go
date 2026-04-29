@@ -103,6 +103,10 @@ func (n *Node) handleMsgNewTransaction(data []byte) {
 	log.Info().Int64("latency", time.Now().UnixMilli()-tx.Timestamp).Msg("отримано транзакцію")
 	if err := n.mempool.Add(&tx); err != nil {
 		log.Warn().Err(err).Msg("отримана транзакція не була додана до mempool")
+	} else {
+		if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+			go n.tryProposeBlock()
+		}
 	}
 }
 
@@ -280,14 +284,23 @@ func (n *Node) handleMsgCommit(data []byte) {
 	}
 
 	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
-		blockProposalMsg, err := n.getMsgBlockProposalMsg()
-		if err != nil {
-			log.Error().Err(err).Msg("помилка створення block proposal")
-			return
-		}
-		if err = n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
-			log.Error().Err(err).Msg("помилка трансляції нового блоку")
-		}
+		go n.tryProposeBlock()
+	}
+}
+
+func (n *Node) tryProposeBlock() {
+	if !n.isProposing.CompareAndSwap(false, true) {
+		return
+	}
+	defer n.isProposing.Store(false)
+
+	blockProposalMsg, err := n.getMsgBlockProposalMsg()
+	if err != nil {
+		log.Debug().Err(err).Msg("не вдалося створити блок (можливо, стан змінився)")
+		return
+	}
+	if err = n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
+		log.Error().Err(err).Msg("помилка трансляції нового блоку")
 	}
 }
 

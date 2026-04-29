@@ -2,6 +2,7 @@
 package p2p
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"sync/atomic"
@@ -35,6 +36,7 @@ type Node struct {
 	vote          chain.VoteCh
 	messagesQueue chan Message
 	syncing       atomic.Bool
+	isProposing   atomic.Bool
 }
 
 // mdnsNotifee підключається до піра щойно він знайдений через mDNS у локальній мережі.
@@ -200,9 +202,12 @@ func (n *Node) handleTxCh() {
 					continue
 				}
 
-				if err = n.topic.broadcast(&m, n.ctx); err != nil {
-					log.Error().Err(err).Msg("помилка broadcast транзакції")
-					continue
+				if err := n.topic.broadcast(&m, n.ctx); err != nil {
+					log.Error().Err(err).Msg("помилка трансляції транзакції")
+				}
+
+				if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+					go n.tryProposeBlock()
 				}
 			}
 		case <-n.ctx.Done():

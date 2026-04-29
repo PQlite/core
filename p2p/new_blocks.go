@@ -104,28 +104,45 @@ func (n *Node) addRewardTx(b *chain.Block) error {
 }
 
 func (n *Node) fullBlockVerefication(block *chain.Block) error {
-	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
-		log.Error().Hex("творець блоку", block.Proposer).Hex("хто повинен робити блок", n.nextProposer.Address).Msg("творець блоку і той, хто повинен робити блок, не збігаются")
-		return fmt.Errorf("невірний proposer")
-	}
 	lastLocalBlock, err := n.bs.GetLastBlock()
 	if err != nil {
 		log.Error().Err(err).Msg("помилка отримання крайнього блоку з бази даних")
 		return err
 	}
+
+	// Якщо ми отримали блок, який уже маємо (або старіший), просто ігноруємо його без помилки
+	if block.Height <= lastLocalBlock.Height {
+		return fmt.Errorf("блок уже оброблений (height %d <= %d)", block.Height, lastLocalBlock.Height)
+	}
+
+	// Якщо висота занадто велика — запускаємо синхронізацію, але не шлемо reject (можливо ми просто відстали)
 	if lastLocalBlock.Height+1 != block.Height {
-		log.Error().Uint32("локальний блок", lastLocalBlock.Height).Uint32("отриманий блок", block.Height).Hex("hash отриманого блоку", block.Hash).Msg("висота блоків не збігається")
-		n.syncBlockchain()
+		log.Warn().Uint32("local", lastLocalBlock.Height).Uint32("received", block.Height).Msg("отримано блок з майбутнього, запускаємо синхронізацію")
+		go n.syncBlockchain()
 		return fmt.Errorf("невірна висота блоку")
 	}
+
+	// ВАЖЛИВО: Спочатку перевіряємо підпис самого блоку та його структуру
 	if err := block.Verify(); err != nil {
 		log.Error().Err(err).Hex("proposer", block.Proposer).Msg("валідація підпису блоку не пройшла")
 		return fmt.Errorf("невірний підпис блоку")
 	}
+
+	// Якщо proposer не той, кого ми чекали — логуємо це, але ПРИЙМАЄМО блок, якщо він валідний.
+	// Це дозволяє мережі вирівняти раунди автоматично.
+	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
+		log.Warn().
+			Hex("received_proposer", block.Proposer).
+			Hex("expected_proposer", n.nextProposer.Address).
+			Uint32("round", n.currentRound).
+			Msg("Блок прийнято від неочікуваного proposer-а (вирівнювання консенсусу)")
+	}
+
 	if err := block.VerifyTransactions(); err != nil {
 		log.Error().Err(err).Msg("верифікація транзакцій блоку не пройшла")
 		return err
 	}
+
 	if err := n.checkBalances(block.Transactions); err != nil {
 		log.Error().Err(err).Msg("помилка перевірки балансів/nonce транзакцій")
 		return err

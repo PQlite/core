@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -133,6 +134,13 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	}
 
 	if err := n.fullBlockVerefication(&block); err != nil {
+		// Якщо блок уже оброблений або ми просто синхронізуємося — не шлемо reject,
+		// щоб не спамити мережу і не провокувати стрибки раундів.
+		if strings.Contains(err.Error(), "оброблений") || strings.Contains(err.Error(), "висота") {
+			log.Debug().Err(err).Msg("блок ігнорується без reject")
+			return
+		}
+
 		log.Warn().Err(err).Msg("блок не пройшов верифікацію — надсилаємо reject")
 		n.rejectCurrentProposer()
 		return

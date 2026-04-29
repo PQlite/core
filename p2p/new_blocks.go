@@ -33,14 +33,22 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 		return chain.Block{}, fmt.Errorf("помилка отримання останнього блоку: %w", err)
 	}
 
-	log.Info().Msg("збір транзакцій для нового блоку")
+	log.Info().Msg("очікування транзакцій для нового блоку")
 
-	mempoolTXs := n.mempool.GetTransactions()
-	var toDrop []*chain.Transaction
-	txsToInclude, toDrop := n.getValidTransactions(mempoolTXs)
+	var txsToInclude []*chain.Transaction
+	for {
+		mempoolTXs := n.mempool.GetTransactions()
+		var toDrop []*chain.Transaction
+		txsToInclude, toDrop = n.getValidTransactions(mempoolTXs)
 
-	if len(toDrop) > 0 {
-		n.mempool.ClearMempool(toDrop)
+		if len(toDrop) > 0 {
+			n.mempool.ClearMempool(toDrop)
+		}
+
+		if len(txsToInclude) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	log.Info().Int("mempool", len(txsToInclude)).Msg("кількість транзакцій в mempool для нового блоку")

@@ -182,6 +182,13 @@ func (n *Node) handleTxCh() {
 		case tx := <-n.TxCh:
 			log.Info().Hex("tx_from", tx.From).Msg("отримано нову транзакцію з API")
 
+			// Захист від DOS
+			wallet, _ := n.bs.GetWalletByAddress(tx.From)
+			if tx.Nonce > wallet.Nonce+10 {
+				log.Warn().Uint32("tx_nonce", tx.Nonce).Uint32("wallet_nonce", wallet.Nonce).Msg("відхилено API: Nonce занадто далеко")
+				continue
+			}
+
 			if err := n.mempool.Add(tx); err != nil {
 				log.Error().Err(err).Msg("помилка додавання транзакції в mempool")
 			} else {

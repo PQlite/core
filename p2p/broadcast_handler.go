@@ -101,6 +101,14 @@ func (n *Node) handleMsgNewTransaction(data []byte) {
 		return
 	}
 	log.Info().Int64("latency", time.Now().UnixMilli()-tx.Timestamp).Msg("отримано транзакцію")
+	
+	// Захист від Mempool DOS: перевіряємо чи Nonce не занадто далеко в майбутньому
+	wallet, _ := n.bs.GetWalletByAddress(tx.From)
+	if tx.Nonce > wallet.Nonce+10 {
+		log.Warn().Uint32("tx_nonce", tx.Nonce).Uint32("wallet_nonce", wallet.Nonce).Msg("відхилено: Nonce занадто далеко в майбутньому (DOS protection)")
+		return
+	}
+
 	if err := n.mempool.Add(&tx); err != nil {
 		log.Warn().Err(err).Msg("отримана транзакція не була додана до mempool")
 	} else {

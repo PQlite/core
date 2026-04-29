@@ -102,6 +102,9 @@ func (b *Block) VerifyTransactions() error {
 		}
 
 	}
+	if len(b.Transactions) < 2 {
+		return fmt.Errorf("блок не має 2 або більше транзакцій")
+	}
 	return nil
 }
 

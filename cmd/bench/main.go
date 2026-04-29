@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/PQlite/core/chain"
+	"github.com/PQlite/crypto"
 )
 
 const (
@@ -29,122 +30,136 @@ type keyFile struct {
 }
 
 func main() {
-	keyPath := flag.String("key", defaultKeyFile, "файл з ключами відправника")
-	toHex := flag.String("to", "", "адреса отримувача hex (якщо пуста — 10 випадкових)")
+	keyPath := flag.String("key", defaultKeyFile, "файл з ключами відправника (головний гаманець)")
+	toHex := flag.String("to", "", "адреса отримувача hex (якщо пуста — випадкові адреси)")
 	count := flag.Int("count", 100, "кількість транзакцій")
-	workers := flag.Int("par", 4, "кількість паралельних воркерів відправки")
+	workers := flag.Int("par", 4, "кількість паралельних воркерів (гаманців)")
 	node := flag.String("node", defaultNode, "адреса ноди")
-	amountFloat := flag.Float64("amount", 1, "сума кожної транзакції")
+	amountFloat := flag.Float64("amount", 0.1, "сума кожної транзакції")
 	feeFloat := flag.Float64("fee", 0.01, "комісія")
-	timeout := flag.Duration("timeout", 3*time.Second, "таймаут очікування підтвердження блоків")
+	timeout := flag.Duration("timeout", 60*time.Second, "таймаут очікування підтвердження блоків")
 	flag.Parse()
 
 	amount := int64(*amountFloat * float64(chain.Precision))
 	fee := int64(*feeFloat * float64(chain.Precision))
 
-	kf := loadKey(*keyPath)
+	mainKF := loadKey(*keyPath)
+	
+	fmt.Printf("=== PQlite Throughput Bench (Multi-Wallet) ===\n")
+	fmt.Printf("Головний гаманець: %s\n", hex.EncodeToString(mainKF.Pub))
+	fmt.Printf("Параметри: %d транзакцій, %d воркерів, сума: %s, комісія: %s\n\n", 
+		*count, *workers, chain.FormatAmount(amount), chain.FormatAmount(fee))
 
-	var recipients [][]byte
-	if *toHex == "" {
-		fmt.Printf("Генерую 10 випадкових адрес отримувачів...\n")
-		for i := 0; i < 10; i++ {
-			addr := make([]byte, 32)
-			rand.Read(addr)
-			recipients = append(recipients, addr)
+	// Фаза 0: Підготовка та фінансування воркерів
+	fmt.Printf("--- Фаза 0: Фінансування воркерів ---\n")
+	workerKeys := make([]keyFile, *workers)
+	tasksPerWorker := *count / *workers
+	
+	mainNonce := fetchNonce(*node, mainKF.Pub)
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	for i := 0; i < *workers; i++ {
+		pub, priv, _ := crypto.Create()
+		workerKeys[i] = keyFile{Pub: pub, Priv: priv}
+		
+		numTasks := tasksPerWorker
+		if i < *count%*workers {
+			numTasks++
 		}
-	} else {
-		toBytes, err := hex.DecodeString(*toHex)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "невірна hex адреса: %v\n", err)
+		
+		// Сума для воркера: (сума + комісія) * кількість задач
+		fundAmount := int64(numTasks) * (amount + fee)
+		
+		tx := chain.Transaction{
+			From:      mainKF.Pub,
+			To:        pub,
+			Amount:    fundAmount,
+			Fee:       fee,
+			Timestamp: time.Now().UnixMilli(),
+			Nonce:     mainNonce,
+		}
+		mainNonce++
+		
+		fatal(tx.Sign(mainKF.Priv), "помилка підпису tx фінансування")
+		data, _ := json.Marshal(tx)
+		
+		resp, err := client.Post(*node+"/tx", "application/json", bytes.NewReader(data))
+		fatal(err, "помилка відправки tx фінансування")
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		
+		if resp.StatusCode != 200 {
+			fmt.Printf("Помилка фінансування воркера %d: статус %d\n", i, resp.StatusCode)
 			os.Exit(1)
 		}
-		recipients = append(recipients, toBytes)
+	}
+	fmt.Printf("Транзакції фінансування відправлені. Очікую підтвердження...\n")
+	
+	// Чекаємо поки останній воркер отримає кошти
+	for {
+		w := fetchWallet(*node, workerKeys[*workers-1].Pub)
+		if w.Balance > 0 {
+			fmt.Printf("Фінансування підтверджено!\n\n")
+			break
+		}
+		time.Sleep(2 * time.Second)
 	}
 
-	fmt.Printf("=== PQlite Throughput Bench ===\n")
-	fmt.Printf("Від:       %s\n", hex.EncodeToString(kf.Pub))
-	if len(recipients) == 1 {
-		fmt.Printf("Кому:      %s\n", hex.EncodeToString(recipients[0]))
-	} else {
-		fmt.Printf("Кому:      %d випадкових адрес\n", len(recipients))
-	}
-	fmt.Printf("Транзакцій: %d (по %s PQL), паралельно: %d\n\n", *count, chain.FormatAmount(amount), *workers)
-
-	// Поточний nonce
-	initialNonce := fetchNonce(*node, kf.Pub)
-	nonceCounter := initialNonce
-	fmt.Printf("Поточний nonce: %d → починаємо з %d\n\n", initialNonce-1, initialNonce)
-
-	// Фаза 1: відправка
-	fmt.Printf("Відправляю %d транзакцій...\n", *count)
+	// Фаза 1: Відправка транзакцій воркерами
+	fmt.Printf("--- Фаза 1: Відправка %d транзакцій ---\n", *count)
 	submitStart := time.Now()
 
 	var sent atomic.Int64
 	var errors atomic.Int64
-	var lastSentNonce atomic.Uint32
-	lastSentNonce.Store(initialNonce - 1)
-
 	workerDone := make(chan struct{}, *workers)
-	
-	// Розподіляємо кількість задач між воркерами
-	tasksPerWorker := *count / *workers
-	extraTasks := *count % *workers
 
 	for w := 0; w < *workers; w++ {
 		numTasks := tasksPerWorker
-		if w < extraTasks {
+		if w < *count%*workers {
 			numTasks++
 		}
 		
-		go func(nTasks int) {
-			client := &http.Client{Timeout: 5 * time.Second}
+		go func(workerID int, nTasks int) {
+			wk := workerKeys[workerID]
+			// Кожен воркер має свій nonce, починаємо з 1 (після фінансування)
+			nonce := uint32(1) 
+			
 			for i := 0; i < nTasks; i++ {
-				// Отримуємо унікальний nonce
-				currentNonce := atomic.AddUint32(&nonceCounter, 1) - 1
-				targetAddr := recipients[int(currentNonce)%len(recipients)]
+				var target []byte
+				if *toHex == "" {
+					target = make([]byte, 32)
+					rand.Read(target)
+				} else {
+					target, _ = hex.DecodeString(*toHex)
+				}
 				
 				tx := chain.Transaction{
-					From:      kf.Pub,
-					To:        targetAddr,
+					From:      wk.Pub,
+					To:        target,
 					Amount:    amount,
 					Fee:       fee,
 					Timestamp: time.Now().UnixMilli(),
-					Nonce:     currentNonce,
+					Nonce:     nonce,
 				}
+				nonce++
 				
-				if err := tx.Sign(kf.Priv); err != nil {
-					errors.Add(1)
-					continue
-				}
-				
+				tx.Sign(wk.Priv)
 				data, _ := json.Marshal(tx)
 				
+				// Відправляємо послідовно для кожного воркера, щоб зберегти порядок Nonce
 				resp, err := client.Post(*node+"/tx", "application/json", bytes.NewReader(data))
-				if err != nil {
-					errors.Add(1)
-					continue
-				}
-				io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
-				
-				if resp.StatusCode == 200 {
+				if err == nil && resp.StatusCode == 200 {
 					sent.Add(1)
-					// Оновлюємо максимально відправлений nonce (приблизно)
-					for {
-						old := lastSentNonce.Load()
-						if currentNonce <= old {
-							break
-						}
-						if lastSentNonce.CompareAndSwap(old, currentNonce) {
-							break
-						}
-					}
 				} else {
 					errors.Add(1)
 				}
+				if resp != nil {
+					io.Copy(io.Discard, resp.Body)
+					resp.Body.Close()
+				}
 			}
 			workerDone <- struct{}{}
-		}(numTasks)
+		}(w, numTasks)
 	}
 
 	for w := 0; w < *workers; w++ {
@@ -152,141 +167,92 @@ func main() {
 	}
 
 	submitDur := time.Since(submitStart)
-	sentN := int(sent.Load())
-	errN := int(errors.Load())
-	maxNonce := lastSentNonce.Load()
+	fmt.Printf("Відправлено: %d/%d (помилок: %d) за %.2fs (%.1f tx/s)\n\n",
+		sent.Load(), *count, errors.Load(), submitDur.Seconds(),
+		float64(sent.Load())/submitDur.Seconds())
 
-	fmt.Printf("Відправлено: %d/%d (помилок: %d) за %.2fs → %.1f tx/s (до API)\n\n",
-		sentN, *count, errN, submitDur.Seconds(),
-		float64(sentN)/submitDur.Seconds())
-
-	if sentN == 0 {
-		fmt.Println("Жодна транзакція не була прийнята. Зупиняюсь.")
-		os.Exit(1)
-	}
-
-	// Фаза 2: очікування підтвердження в блоках
-	fmt.Printf("Очікую підтвердження в блоках (таймаут: %s)...\n", *timeout)
+	// Фаза 2: Очікування підтвердження
+	fmt.Printf("--- Фаза 2: Очікування підтвердження в блоках ---\n")
 	waitStart := time.Now()
 	deadline := waitStart.Add(*timeout)
-
-	lastHeight := uint32(0)
-	confirmedByBlock := make(map[uint32]int)
-
-	ticker := time.NewTicker(500 * time.Millisecond)
+	
+	lastHeight := fetchWallet(*node, mainKF.Pub).Nonce // приблизно
+	confirmedCount := int64(0)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	var totalConfirmed int
-	var firstBlockTime time.Duration
-	
-	// Карта для відстеження підтверджених nonce
-	confirmedNonces := make(map[uint32]bool)
-
-	for time.Now().Before(deadline) {
+	for time.Now().Before(deadline) && confirmedCount < sent.Load() {
 		<-ticker.C
-
 		blocks := fetchBlocks(*node)
+		
+		newConfirmed := int64(0)
 		for _, b := range blocks {
 			if b.Height <= lastHeight {
 				continue
 			}
-
-			newConfirmations := 0
 			for _, tx := range b.Transactions {
-				if bytes.Equal(tx.From, kf.Pub) && tx.Nonce >= initialNonce && tx.Nonce <= maxNonce {
-					if !confirmedNonces[tx.Nonce] {
-						confirmedNonces[tx.Nonce] = true
-						newConfirmations++
+				// Перевіряємо чи це транзакція від одного з наших воркерів
+				for _, wk := range workerKeys {
+					if bytes.Equal(tx.From, wk.Pub) {
+						newConfirmed++
+						break
 					}
 				}
 			}
-
-			if newConfirmations > 0 {
-				elapsed := time.Since(submitStart)
-				if firstBlockTime == 0 {
-					firstBlockTime = elapsed
-				}
-				confirmedByBlock[b.Height] += newConfirmations
-				totalConfirmed += newConfirmations
-				ts := time.UnixMilli(b.Timestamp).Format("15:04:05.000")
-				fmt.Printf("  Блок #%-4d [%s] — %d нових txs підтверджено (всього %d/%d, +%.1fs від старту)\n",
-					b.Height, ts, newConfirmations, totalConfirmed, sentN, elapsed.Seconds())
+			if b.Height > lastHeight {
 				lastHeight = b.Height
 			}
 		}
-
-		if totalConfirmed >= sentN {
-			break
+		
+		if newConfirmed > 0 {
+			confirmedCount += newConfirmed
+			fmt.Printf("  Підтверджено: %d/%d (%.1fs від старту)\n", 
+				confirmedCount, sent.Load(), time.Since(submitStart).Seconds())
 		}
 	}
 
-	waitDur := time.Since(waitStart)
-
-	// Фаза 3: звіт
+	totalDur := time.Since(submitStart)
 	fmt.Printf("\n=== Результати ===\n")
-	fmt.Printf("Відправлено до API:      %d txs за %.2fs (%.1f tx/s)\n",
-		sentN, submitDur.Seconds(), float64(sentN)/submitDur.Seconds())
-	fmt.Printf("Підтверджено в блоках:   %d/%d\n", totalConfirmed, sentN)
-
-	if totalConfirmed > 0 {
-		totalWait := submitDur + waitDur
-		fmt.Printf("Час до першого блоку:   %.2fs\n", firstBlockTime.Seconds())
-		fmt.Printf("Загальний час:           %.2fs\n", totalWait.Seconds())
-		fmt.Printf("Ефективний TPS:          %.1f tx/s\n", float64(totalConfirmed)/totalWait.Seconds())
-
-		if len(confirmedByBlock) > 1 {
-			heights := make([]uint32, 0, len(confirmedByBlock))
-			for h := range confirmedByBlock {
-				heights = append(heights, h)
-			}
-			// Середній час блоку по кількості блоків
-			fmt.Printf("Блоків з нашими txs:    %d\n", len(confirmedByBlock))
-		}
-	} else {
-		fmt.Printf("Жодна транзакція не підтверджена за %s\n", *timeout)
-	}
+	fmt.Printf("Ефективний TPS: %.1f tx/s\n", float64(confirmedCount)/totalDur.Seconds())
+	fmt.Printf("Загальний час:  %.2fs\n", totalDur.Seconds())
 }
+
+// --- Helpers ---
 
 func loadKey(path string) keyFile {
 	data, err := os.ReadFile(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "не вдалось прочитати файл ключів %s: %v\n", path, err)
-		os.Exit(1)
-	}
+	fatal(err, "не вдалось прочитати файл ключів")
 	var kf keyFile
-	if err = json.Unmarshal(data, &kf); err != nil {
-		// Спробуємо формат з crypto.Create (pub, priv окремо)
-		fmt.Fprintf(os.Stderr, "невірний формат файлу ключів: %v\n", err)
-		os.Exit(1)
-	}
+	fatal(json.Unmarshal(data, &kf), "невірний формат ключа")
 	return kf
 }
 
-func fetchNonce(node string, pub []byte) uint32 {
+func fetchWallet(node string, pub []byte) chain.Wallet {
 	url := fmt.Sprintf("%s/addr/%s", node, hex.EncodeToString(pub))
 	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "помилка отримання nonce: %v\n", err)
-		os.Exit(1)
-	}
+	if err != nil { return chain.Wallet{} }
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	var wallet chain.Wallet
-	if err = json.Unmarshal(body, &wallet); err != nil {
-		fmt.Fprintf(os.Stderr, "помилка читання wallet: %v\n", err)
-		os.Exit(1)
-	}
-	return wallet.Nonce + 1
+	var w chain.Wallet
+	json.NewDecoder(resp.Body).Decode(&w)
+	return w
+}
+
+func fetchNonce(node string, pub []byte) uint32 {
+	return fetchWallet(node, pub).Nonce + 1
 }
 
 func fetchBlocks(node string) []chain.Block {
 	resp, err := http.Get(node + "/blocks")
-	if err != nil {
-		return nil
-	}
+	if err != nil { return nil }
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 	var blocks []chain.Block
-	json.Unmarshal(body, &blocks)
+	json.NewDecoder(resp.Body).Decode(&blocks)
 	return blocks
+}
+
+func fatal(err error, msg string) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", msg, err)
+		os.Exit(1)
+	}
 }

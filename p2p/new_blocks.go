@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -144,52 +145,12 @@ func (n *Node) setNextProposer() error {
 	return nil
 }
 
-func (n *Node) validateTxState(tx *chain.Transaction, nonces map[string]uint32, balances map[string]int64) error {
-	if bytes.Equal(tx.From, []byte(REWARDWALLET)) {
-		if tx.Amount != REWARD {
-			return fmt.Errorf("транзакція нагороди має неправильну суму")
-		}
-		return nil
-	}
-
-	fromAddr := string(tx.From)
-	
-	// Initialize state if not present
-	if _, ok := nonces[fromAddr]; !ok {
-		wallet, err := n.bs.GetWalletByAddress(tx.From)
-		if err != nil {
-			return fmt.Errorf("помилка отримання даних про гаманець: %w", err)
-		}
-		nonces[fromAddr] = wallet.Nonce
-		balances[fromAddr] = wallet.Balance
-	}
-
-	currentNonce := nonces[fromAddr]
-	currentBalance := balances[fromAddr]
-
-	totalCost := tx.Amount + tx.Fee
-	if currentBalance < totalCost {
-		return fmt.Errorf("недостатній баланс для переказу: має %s, треба %s (amount: %s, fee: %s)", 
-			chain.FormatAmount(currentBalance), 
-			chain.FormatAmount(totalCost),
-			chain.FormatAmount(tx.Amount),
-			chain.FormatAmount(tx.Fee))
-	}
-	
-	// For block inclusion, we only allow the EXACT next nonce.
-	// But in some contexts we might want to just check if it's potentially valid.
-	if tx.Nonce != currentNonce+1 {
-		return fmt.Errorf("невірний Nonce транзакції: %d, очікується %d (Nonce гаманця: %d)", tx.Nonce, currentNonce+1, currentNonce)
-	}
-
-	// Update state
-	nonces[fromAddr] = tx.Nonce
-	balances[fromAddr] = currentBalance - totalCost
-
-	return nil
-}
-
 func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transaction, []*chain.Transaction) {
+	// Сортуємо транзакції за Nonce, щоб обробляти їх у правильному порядку
+	sort.Slice(txs, func(i, j int) bool {
+		return txs[i].Nonce < txs[j].Nonce
+	})
+
 	toInclude := make([]*chain.Transaction, 0, len(txs))
 	toDrop := make([]*chain.Transaction, 0)
 	
@@ -197,13 +158,37 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 	balances := make(map[string]int64)
 
 	for _, tx := range txs {
-		err := n.validateTxState(tx, nonces, balances)
-		if err == nil {
-			toInclude = append(toInclude, tx)
-		} else {
-			log.Warn().Err(err).Hex("tx", tx.Signature).Msg("dropping invalid tx from mempool")
-			toDrop = append(toDrop, tx)
+		fromAddr := string(tx.From)
+		if _, ok := nonces[fromAddr]; !ok {
+			wallet, err := n.bs.GetWalletByAddress(tx.From)
+			if err != nil {
+				continue
+			}
+			nonces[fromAddr] = wallet.Nonce
+			balances[fromAddr] = wallet.Balance
 		}
+
+		currentNonce := nonces[fromAddr]
+		currentBalance := balances[fromAddr]
+
+		if tx.Nonce <= currentNonce {
+			toDrop = append(toDrop, tx)
+			continue
+		}
+
+		if tx.Nonce > currentNonce+1 {
+			continue
+		}
+
+		totalCost := tx.Amount + tx.Fee
+		if currentBalance < totalCost {
+			toDrop = append(toDrop, tx)
+			continue
+		}
+
+		toInclude = append(toInclude, tx)
+		nonces[fromAddr] = tx.Nonce
+		balances[fromAddr] = currentBalance - totalCost
 	}
 	return toInclude, toDrop
 }
@@ -213,23 +198,42 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 	balances := make(map[string]int64)
 
 	for _, tx := range txs {
-		if err := n.validateTxState(tx, nonces, balances); err != nil {
-			return err
+		fromAddr := string(tx.From)
+		if _, ok := nonces[fromAddr]; !ok {
+			wallet, err := n.bs.GetWalletByAddress(tx.From)
+			if err != nil {
+				return err
+			}
+			nonces[fromAddr] = wallet.Nonce
+			balances[fromAddr] = wallet.Balance
 		}
+
+		currentNonce := nonces[fromAddr]
+		currentBalance := balances[fromAddr]
+
+		if tx.Nonce != currentNonce+1 {
+			return fmt.Errorf("невірний Nonce транзакції: %d, очікується %d", tx.Nonce, currentNonce+1)
+		}
+
+		totalCost := tx.Amount + tx.Fee
+		if currentBalance < totalCost {
+			return fmt.Errorf("недостатній баланс: %d < %d", currentBalance, totalCost)
+		}
+
+		nonces[fromAddr] = tx.Nonce
+		balances[fromAddr] = currentBalance - totalCost
 	}
 	return nil
 }
 
 func (n *Node) updateBalancesNonces(b *chain.Block) error {
 	for _, tx := range b.Transactions {
-		// HACK: якщо proposer надсилає звичайну tx, то його Nonce оновиться двічі
 		if bytes.Equal(tx.From, []byte(STAKE)) || bytes.Equal(tx.From, []byte(REWARDWALLET)) {
 			walletTo, err := n.bs.GetWalletByAddress(tx.To)
 			if err != nil {
 				return err
 			}
 			walletTo.Balance += tx.Amount
-			// Nonce не збільшуємо — він відслідковує лише відправлені (outgoing) транзакції
 			if err = n.bs.UpdateBalance(&walletTo); err != nil {
 				return fmt.Errorf("помилка оновлення балансу гаманця %x: %w", walletTo.Address, err)
 			}
@@ -255,7 +259,6 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 			return err
 		}
 
-		// Add Fee to reward wallet
 		if tx.Fee > 0 {
 			rewardWallet, err := n.bs.GetWalletByAddress([]byte(REWARDWALLET))
 			if err != nil {
@@ -271,7 +274,6 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 }
 
 func (n *Node) addValidatorsToDB(block *chain.Block) error {
-	// ISSUE: треба додавати баланс до валідатора, якщо він вже існує, а не перезаписувати його
 	for _, tx := range block.Transactions {
 		if bytes.Equal(tx.To, []byte(STAKE)) {
 			validator, _ := n.bs.GetValidator(tx.From)
@@ -296,15 +298,12 @@ func (n *Node) addValidatorsToDB(block *chain.Block) error {
 
 func (n *Node) deleteValidatorsFromDB(block *chain.Block) error {
 	for _, tx := range block.Transactions {
-		if bytes.Equal(tx.From, []byte("unstake")) {
-			validator, err := n.bs.GetValidator(tx.To)
-			if err != nil {
-				log.Error().Err(err).Msg("помилка отримання валідатора при unstake")
-				return err
+		if bytes.Equal(tx.To, []byte("unstake")) {
+			validator := &chain.Validator{
+				Address: tx.From,
+				Amount:  tx.Amount,
 			}
-
-			if err = n.bs.DeleteValidator(validator); err != nil {
-				log.Error().Err(err).Msg("помилка видалення валідатора при unstake")
+			if err := n.bs.DeleteValidator(validator); err != nil {
 				return err
 			}
 		}

@@ -72,6 +72,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/addr/:id", s.handleGetBalance)
 	s.app.Get("/validators", s.handleGetValidators)
 	s.app.Get("/lastBlock", s.handleGetLastBlock)
+	s.app.Get("/chainSize", s.handleGetChainSize)
 	s.app.Get("/nextProposer", s.handleGetNextProposer)
 	s.app.Get("/currentRound", s.handleGetCurrentRound)
 	s.app.Post("/tx", s.handlePostTx)
@@ -188,6 +189,19 @@ func (s *Server) handleGetLastBlock(c *fiber.Ctx) error {
 		})
 	}
 	return c.JSON(lastBlock)
+}
+
+func (s *Server) handleGetChainSize(c *fiber.Ctx) error {
+	size, err := s.bs.GetSize()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"size_mb": float64(size) / (1024 * 1024),
+	})
 }
 
 func (s *Server) handleGetValidators(c *fiber.Ctx) error {

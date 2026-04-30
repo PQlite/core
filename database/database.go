@@ -5,8 +5,11 @@ package database
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/PQlite/core/chain"
 	"github.com/dgraph-io/badger/v4"
@@ -14,22 +17,41 @@ import (
 )
 
 type BlockStorage struct {
-	db *badger.DB
+	db   *badger.DB
+	path string
 }
 
 func InitDB() (*BlockStorage, error) {
-	opts := badger.DefaultOptions("/tmp/badger")
+	path := "/tmp/badger"
+	opts := badger.DefaultOptions(path)
 	opts.Compression = options.Snappy
 	db, err := badger.Open(opts)
-	bs := &BlockStorage{db: db}
 	if err != nil {
 		return nil, err
 	}
-	return bs, nil
+	return &BlockStorage{db: db, path: path}, nil
 }
 
 func (bs *BlockStorage) Close() error {
 	return bs.db.Close()
+}
+
+func (bs *BlockStorage) GetSize() (int64, error) {
+	var size int64
+	err := filepath.Walk(bs.path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+				size += stat.Blocks * 512
+			} else {
+				size += info.Size()
+			}
+		}
+		return nil
+	})
+	return size, err
 }
 
 func (bs *BlockStorage) SaveBlock(block *chain.Block) error {

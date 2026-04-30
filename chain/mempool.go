@@ -46,16 +46,38 @@ func (m *Mempool) Len() int {
 	return len(m.TXs)
 }
 
+func (m *Mempool) GetTransactions() []*Transaction {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	txs := make([]*Transaction, len(m.TXs))
+	copy(txs, m.TXs)
+	return txs
+}
+
+func (m *Mempool) SetTransactions(txs []*Transaction) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.TXs = txs
+}
+
 func (m *Mempool) ClearMempool(txs []*Transaction) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	removeMap := make(map[string]bool)
 	for _, tx := range txs {
-		for index, localTX := range m.TXs {
-			if bytes.Equal(localTX.Signature, tx.Signature) {
-				m.TXs = append(m.TXs[:index], m.TXs[index+1:]...) // видалити зі слайсу
-				log.Info().Hex("sig", tx.Signature).Msg("видалино транзакцію з mempool")
-			}
+		removeMap[string(tx.Signature)] = true
+	}
+
+	newTXs := make([]*Transaction, 0, len(m.TXs))
+	for _, localTX := range m.TXs {
+		if !removeMap[string(localTX.Signature)] {
+			newTXs = append(newTXs, localTX)
+		} else {
+			log.Info().Hex("sig", localTX.Signature).Msg("видалино транзакцію з mempool")
 		}
 	}
+	m.TXs = newTXs
 }

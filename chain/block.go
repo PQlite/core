@@ -17,6 +17,7 @@ import (
 
 type Block struct {
 	Height       uint32         // Номер блоку
+	Round        uint32         // Раунд в якому був створений блок
 	Timestamp    int64          // UNIX час
 	PrevHash     []byte         // Хеш попереднього блоку
 	Hash         []byte         // Хеш цього блоку (розраховується по іншим полям)
@@ -25,22 +26,30 @@ type Block struct {
 	Signature    []byte         // Підпис Proposer'а на блоку
 }
 
-// sortTransactions сортує транзакції в блоці за їх підписами.
-// Це необхідно для детерміністичної серіалізації.
+// sortTransactions сортує транзакції в блоці детерміністично.
+// ВАЖЛИВО: сортування за (From, Nonce) гарантує, що транзакції одного гаманця
+// завжди йдуть у правильному порядку для перевірки Nonce.
 func (b *Block) sortTransactions() {
 	sort.Slice(b.Transactions, func(i, j int) bool {
-		return bytes.Compare(b.Transactions[i].Signature, b.Transactions[j].Signature) < 0
+		// Спочатку за адресою відправника
+		cmp := bytes.Compare(b.Transactions[i].From, b.Transactions[j].From)
+		if cmp != 0 {
+			return cmp < 0
+		}
+		// Якщо відправник той самий — за Nonce
+		return b.Transactions[i].Nonce < b.Transactions[j].Nonce
 	})
 }
 
 func (b *Block) Sign(binPriv []byte) error {
 	b.sortTransactions()
 
-	BlockForSignBytes, err := json.Marshal(*b)
-	if err != nil {
+	if err := b.GenerateHash(); err != nil {
 		return err
 	}
-	sig, err := crypto.Sign(binPriv, BlockForSignBytes)
+
+	// Підписуємо хеш блоку, а не весь JSON
+	sig, err := crypto.Sign(binPriv, b.Hash)
 	if err != nil {
 		return err
 	}
@@ -64,28 +73,26 @@ func (b *Block) GenerateHash() error {
 }
 
 func (b *Block) Verify() error {
+	// Створюємо копію для перевірки хешу
 	blockForVerify := *b
 	blockForVerify.Signature = nil
 	blockForVerify.Hash = nil
 
 	blockForVerify.sortTransactions()
 
+	// Генеруємо хеш для порівняння
 	if err := blockForVerify.GenerateHash(); err != nil {
 		log.Error().Err(err).Msg("помилка генерації hash`у блоку")
 		return err
 	}
+
 	if !bytes.Equal(b.Hash, blockForVerify.Hash) {
-		log.Error().Hex("local hash", blockForVerify.Hash).Hex("out hash", b.Hash).Msg("hash перевірочногу блоку не збігаєтся")
-		return fmt.Errorf("hash`s не збігаются")
+		log.Error().Hex("local hash", blockForVerify.Hash).Hex("out hash", b.Hash).Msg("hash перевірочного блоку не збігається")
+		return fmt.Errorf("hash`s не збігаються")
 	}
 
-	binBlockForVerify, err := json.Marshal(blockForVerify)
-	if err != nil {
-		log.Error().Err(err).Msg("помилка json.Marshal в verify блоку")
-		return err
-	}
-
-	if err = crypto.Verify(b.Proposer, binBlockForVerify, b.Signature); err != nil {
+	// Перевіряємо підпис, який було накладено на хеш
+	if err := crypto.Verify(b.Proposer, b.Hash, b.Signature); err != nil {
 		log.Error().Err(err).Msg("помилка перевірки підпису блоку")
 		return err
 	}
@@ -98,7 +105,7 @@ func (b *Block) VerifyTransactions() error {
 	for _, tx := range b.Transactions {
 		err := tx.Verify()
 		if err != nil {
-			log.Error().Err(err).Msg("помилка перевірки підписку транзакцій")
+			log.Error().Err(err).Msg("помилка перевірки підпису транзакції")
 			return err
 		}
 
@@ -107,9 +114,28 @@ func (b *Block) VerifyTransactions() error {
 }
 
 func (b *Block) MarshalDeterministic() ([]byte, error) {
+	// Для хешування нам потрібні всі дані блоку КРІМ Hash та Signature
+	type BlockForHashing struct {
+		Height       uint32
+		Round        uint32
+		Timestamp    int64
+		PrevHash     []byte
+		Proposer     []byte
+		Transactions []*Transaction
+	}
+
 	b.sortTransactions()
 
-	res, err := json.Marshal(b)
+	data := BlockForHashing{
+		Height:       b.Height,
+		Round:        b.Round,
+		Timestamp:    b.Timestamp,
+		PrevHash:     b.PrevHash,
+		Proposer:     b.Proposer,
+		Transactions: b.Transactions,
+	}
+
+	res, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
 	}
@@ -127,29 +153,30 @@ func CreateGenesisBlock() (Block, Validator, Wallet) {
 	valTx := Transaction{
 		From:      pubBytes,
 		To:        []byte("stake"),
-		Amount:    1,
+		Amount:    1 * Precision,
 		Timestamp: 0,
 		Nonce:     1,
 	}
 	balanceTx := Transaction{
 		From:      []byte("reward"),
 		To:        pubBytes,
-		Amount:    100000000,
+		Amount:    1000000 * Precision,
 		Timestamp: 0,
 		Nonce:     2,
 	}
 
 	b := Block{
 		Height:       0,
+		Round:        0,
 		Transactions: []*Transaction{&valTx, &balanceTx},
 	}
 	val := Validator{
 		Address: pubBytes,
-		Amount:  1,
+		Amount:  1 * Precision,
 	}
 	wallet := Wallet{
 		Address: pubBytes,
-		Balance: 100000000,
+		Balance: 1000000 * Precision,
 		Nonce:   2,
 	}
 	return b, val, wallet

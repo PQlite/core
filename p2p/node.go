@@ -2,8 +2,10 @@
 package p2p
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -11,11 +13,13 @@ import (
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
+	libp2pnet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	discovery_routing "github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
-	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	"github.com/rs/zerolog/log"
 )
 
@@ -27,10 +31,29 @@ type Node struct {
 	mempool       *chain.Mempool
 	bs            *database.BlockStorage
 	kdht          *dht.IpfsDHT
-	keys          *Keys // NOTE: не думаю, що це гарне рішення, але вже як є
+	keys          *Keys
 	nextProposer  chain.Validator
+	currentRound  uint32
 	vote          chain.VoteCh
 	messagesQueue chan Message
+	syncing       atomic.Bool
+	isProposing   atomic.Bool
+	lastBlockTime time.Time
+}
+
+// mdnsNotifee підключається до піра щойно він знайдений через mDNS у локальній мережі.
+type mdnsNotifee struct {
+	h   host.Host
+	ctx context.Context
+}
+
+func (m *mdnsNotifee) HandlePeerFound(pi peer.AddrInfo) {
+	log.Info().Str("peer", pi.ID.String()).Msg("mDNS: знайдено пір у локальній мережі")
+	if err := m.h.Connect(m.ctx, pi); err != nil {
+		log.Debug().Err(err).Str("peer", pi.ID.String()).Msg("mDNS: не вдалося підключитися")
+	} else {
+		log.Info().Str("peer", pi.ID.String()).Msg("mDNS: підключено")
+	}
 }
 
 func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStorage) (Node, error) {
@@ -41,10 +64,19 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		log.Fatal().Err(err).Msg("помилка завантаження ідентифікатора")
 	}
 
+	cm, err := connmgr.NewConnManager(
+		100, // Lowwater
+		400, // Highwater,
+		connmgr.WithGracePeriod(time.Minute),
+	)
+	if err != nil {
+		return Node{}, err
+	}
+
 	node, err := libp2p.New(
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			var err error
-			kdht, err = dht.New(ctx, h)
+			kdht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer))
 			if err != nil {
 				return nil, err
 			}
@@ -53,16 +85,11 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 
 		libp2p.ListenAddrStrings("/ip6/::/tcp/4003", "/ip4/0.0.0.0/tcp/4003"),
 		libp2p.Identity(priv),
-		// NAT traversal (UPnP, NAT-PMP, AutoNAT)
-		libp2p.NATPortMap(), // Пробує пробросити порт (UPnP/NAT-PMP)
-		// TODO: реалізувати цю функцію
-		// libp2p.EnableAutoRelayWithPeerSource(DHTPeerSource(kdht)),
-		libp2p.EnableAutoNATv2(), // Дозволяє тобі самому бути relay source (для AutoNAT)
-
-		// Relay
-		libp2p.EnableRelay(), // Дозволити relay (старий механізм, потрібний для AutoRelay)
+		libp2p.ConnectionManager(cm),
+		libp2p.NATPortMap(),
+		libp2p.EnableAutoNATv2(),
+		libp2p.EnableRelay(),
 		libp2p.EnableRelayService(),
-
 		libp2p.EnableHolePunching(),
 		libp2p.EnableNATService(),
 	)
@@ -70,7 +97,14 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		return Node{}, err
 	}
 
-	// init topic
+	// mDNS — автоматичне виявлення нод у локальній мережі (LAN/Wi-Fi)
+	mdnsService := mdns.NewMdnsService(node, ns, &mdnsNotifee{h: node, ctx: ctx})
+	if err := mdnsService.Start(); err != nil {
+		log.Error().Err(err).Msg("не вдалося запустити mDNS (продовжуємо без нього)")
+	} else {
+		log.Info().Msg("mDNS запущено")
+	}
+
 	topic, err := topicInit(ctx, node)
 	if err != nil {
 		return Node{}, err
@@ -86,6 +120,12 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		log.Info().Str("address", p.String()).Str("peer_id", node.ID().String()).Msg("p2p node address")
 	}
 
+	lastBlock, err := bs.GetLastBlock()
+	lastBlockTime := time.Now()
+	if err == nil {
+		lastBlockTime = time.UnixMilli(lastBlock.Timestamp)
+	}
+
 	return Node{
 		host:          node,
 		ctx:           ctx,
@@ -96,18 +136,25 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		kdht:          kdht,
 		keys:          keys,
 		nextProposer:  chain.Validator{},
-		vote:          make(chan chain.Vote),
-		messagesQueue: make(chan Message),
+		vote:          make(chan chain.Vote, 100),
+		messagesQueue: make(chan Message, 100),
+		lastBlockTime: lastBlockTime,
 	}, nil
 }
 
-// Start Запуск p2p сервер
 func (n *Node) Start() {
-	// Підключення до bootstrap
-	n.connectingToBootstrap()
-	go n.peerDiscovery()
+	// Коли з'являється новий пір (через mDNS, DHT або bootstrap) — ретригеримо синхронізацію.
+	// Register notifications BEFORE starting connections to avoid missing initial events.
+	n.host.Network().Notify(&libp2pnet.NotifyBundle{
+		ConnectedF: func(_ libp2pnet.Network, conn libp2pnet.Conn) {
+			log.Info().Str("peer", conn.RemotePeer().String()).Msg("новий пір — запускаємо синхронізацію")
+			go n.syncBlockchain()
+		},
+	})
 
-	// Handlers
+	go n.bootstrapLoop()
+
+	go n.peerDiscovery()
 	go n.handleBroadcastMessages()
 	go n.handleTxCh()
 	go n.host.SetStreamHandler(directProtocol, n.handleStreamMessages)
@@ -117,23 +164,56 @@ func (n *Node) Start() {
 	<-n.ctx.Done()
 	log.Info().Msg("отримано команду зупинки в Node")
 	if err := n.host.Close(); err != nil {
-		panic(err)
+		log.Error().Err(err).Msg("помилка закриття p2p host")
 	}
 }
 
-// TODO: треба перевіряти баланси і nonce перед додаванням, або перевіряти їх перед тим, як додати в блок
+func (n *Node) bootstrapLoop() {
+	// First attempt immediately
+	n.connectToBootstrap()
+	if err := n.kdht.Bootstrap(n.ctx); err != nil {
+		log.Error().Err(err).Msg("помилка ініціалізації DHT")
+	}
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// If we have few peers, try to reconnect to bootstrap
+			if len(n.host.Network().Peers()) < 3 {
+				log.Debug().Msg("мало пірів, пробуємо перепідключитися до bootstrap...")
+				n.connectToBootstrap()
+				if err := n.kdht.Bootstrap(n.ctx); err != nil {
+					log.Error().Err(err).Msg("помилка ре-ініціалізації DHT")
+				}
+			}
+		case <-n.ctx.Done():
+			return
+		}
+	}
+}
+
 func (n *Node) handleTxCh() {
 	for {
 		select {
 		case tx := <-n.TxCh:
 			log.Info().Hex("tx_from", tx.From).Msg("отримано нову транзакцію з API")
 
+			// Захист від DOS
+			wallet, _ := n.bs.GetWalletByAddress(tx.From)
+			if tx.Nonce > wallet.Nonce+10 {
+				log.Warn().Uint32("tx_nonce", tx.Nonce).Uint32("wallet_nonce", wallet.Nonce).Msg("відхилено API: Nonce занадто далеко")
+				continue
+			}
+
 			if err := n.mempool.Add(tx); err != nil {
 				log.Error().Err(err).Msg("помилка додавання транзакції в mempool")
 			} else {
 				txBytes, err := json.Marshal(tx)
 				if err != nil {
-					log.Error().Err(err).Msg("помилка розпаковки транзакції")
+					log.Error().Err(err).Msg("помилка серіалізації транзакції")
 					continue
 				}
 
@@ -144,12 +224,16 @@ func (n *Node) handleTxCh() {
 					Pub:       n.keys.Pub,
 				}
 				if err = m.sign(n.keys.Priv); err != nil {
-					log.Error().Err(err).Msg("sing error")
+					log.Error().Err(err).Msg("помилка підпису транзакції")
 					continue
 				}
 
-				if err = n.topic.broadcast(&m, n.ctx); err != nil {
-					panic(err)
+				if err := n.topic.broadcast(&m, n.ctx); err != nil {
+					log.Error().Err(err).Msg("помилка трансляції транзакції")
+				}
+
+				if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+					go n.tryProposeBlock()
 				}
 			}
 		case <-n.ctx.Done():
@@ -159,42 +243,65 @@ func (n *Node) handleTxCh() {
 }
 
 func (n *Node) peerDiscovery() {
-	ticker := time.NewTicker(120 * time.Second)
-
 	routingDiscovery := discovery_routing.NewRoutingDiscovery(n.kdht)
 	util.Advertise(n.ctx, routingDiscovery, ns)
 
+	// Перший пошук одразу після старту, не чекаємо тікера
+	n.findAndConnectPeers(routingDiscovery)
+
+	ticker := time.NewTicker(120 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			peerChan, err := routingDiscovery.FindPeers(n.ctx, ns)
-			if err != nil {
-				log.Fatal().Err(err).Msg("помилка пошуку пірів")
-			}
-
-			for p := range peerChan {
-				if p.ID != n.host.ID() {
-					ch := ping.Ping(n.ctx, n.host, p.ID)
-					res := <-ch
-					if res.Error == nil {
-						log.Info().Str("peer_id", p.ID.String()).Dur("rtt", res.RTT).Msg("ping")
-					}
-				}
-			}
+			n.findAndConnectPeers(routingDiscovery)
 		case <-n.ctx.Done():
 			return
 		}
 	}
 }
 
-func (n *Node) connectingToBootstrap() {
+func (n *Node) findAndConnectPeers(rd *discovery_routing.RoutingDiscovery) {
+	peerChan, err := rd.FindPeers(n.ctx, ns)
+	if err != nil {
+		log.Error().Err(err).Msg("помилка пошуку пірів через DHT")
+		return
+	}
+	for p := range peerChan {
+		if p.ID == n.host.ID() {
+			continue
+		}
+
+		if n.host.Network().Connectedness(p.ID) != libp2pnet.Connected {
+			log.Info().Str("peer", p.ID.String()).Msg("DHT: знайдено пір, підключаємося...")
+			if err := n.host.Connect(n.ctx, p); err != nil {
+				log.Debug().Err(err).Str("peer", p.ID.String()).Msg("DHT: не вдалося підключитися")
+				continue
+			}
+			log.Info().Str("peer", p.ID.String()).Msg("DHT: підключено")
+		}
+	}
+}
+
+// GetNextProposer повертає поточного очікуваного творця блоку.
+func (n *Node) GetNextProposer() chain.Validator {
+	return n.nextProposer
+}
+
+// GetCurrentRound повертає номер поточного раунду консенсусу.
+func (n *Node) GetCurrentRound() uint32 {
+	return n.currentRound
+}
+
+func (n *Node) connectToBootstrap() {
+
 	for _, addr := range BOOTSTRAPLIST {
 		pi, err := peer.AddrInfoFromString(addr)
 		if err != nil {
 			log.Error().Err(err).Str("address", addr).Msg("помилка отримання адреси bootstrap")
+			continue
 		}
-		err = n.host.Connect(n.ctx, *pi)
-		if err != nil {
+		if err = n.host.Connect(n.ctx, *pi); err != nil {
 			log.Error().Err(err).Str("address", addr).Msg("помилка підключення до bootstrap")
 		} else {
 			log.Info().Str("address", pi.Addrs[0].String()).Msg("підключено до bootstrap")

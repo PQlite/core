@@ -34,8 +34,8 @@ const (
 	MsgDeleteValidator MessageType = "deleteValidator" // NOTE: це треба, щоб видаляти валідатора зі списку, якщо він не зробив блок/вимкнувся
 )
 
-// NOTE: можливо треба розділити на окремі структури, взалежності від контенту
 type Message struct {
+	// NOTE: можливо треба розділити на окремі структури, взалежності від контенту
 	Type      MessageType `json:"type"` // Тип повідомлення
 	Timestamp int64       `json:"timestamp"`
 	Data      []byte      `json:"data"`      // дані через json.Marshal // NOTE: можливо треба замінити на структуру, якщо так можна, тому що там завжди структури
@@ -43,10 +43,15 @@ type Message struct {
 	Signature []byte      `json:"signature"` // підпис відправника
 }
 
-// OPTIMIZE: треба видалити, тому що відправка блока 2 рази це не дуже ефективно
 type Commit struct {
+	// OPTIMIZE: треба видалити, тому що відправка блока 2 рази це не дуже ефективно
 	Voters []chain.Vote `json:"voters"`
 	Block  chain.Block  `json:"block"`
+}
+
+type Reject struct {
+	Proposer []byte `json:"proposer"` // хто відхиляється
+	Round    uint32 `json:"round"`    // номер раунду
 }
 
 func (m *Message) sign(priv []byte) error {
@@ -87,7 +92,10 @@ func (m *Message) verify() bool {
 }
 
 func (n *Node) getMsgBlockProposalMsg() (*Message, error) {
-	newBlock := n.createNewBlock()
+	newBlock, err := n.createNewBlock()
+	if err != nil {
+		return nil, err
+	}
 
 	newBlockBytes, err := json.Marshal(newBlock)
 	if err != nil {
@@ -136,7 +144,24 @@ func (n *Node) getCommitMsg(voters *[]chain.Vote, b *chain.Block) (*Message, err
 	return &msg, nil
 }
 
-// TODO: додати логування
+func (n *Node) getRejectMsg(proposer []byte, round uint32) (*Message, error) {
+	reject := Reject{Proposer: proposer, Round: round}
+	data, err := json.Marshal(reject)
+	if err != nil {
+		return nil, err
+	}
+	msg := Message{
+		Type:      MsgReject,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      data,
+		Pub:       n.keys.Pub,
+	}
+	if err = msg.sign(n.keys.Priv); err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
 func (n *Node) getVoteMsg(blockBytes []byte) (*Message, error) {
 	sig, err := crypto.Sign(n.keys.Priv, blockBytes)
 	if err != nil {

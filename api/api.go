@@ -3,17 +3,23 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PQlite/core/chain"
 	"github.com/PQlite/core/database"
 	"github.com/PQlite/core/p2p"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/websocket/v2"
 	"github.com/rs/zerolog/log"
+	"sync"
 )
 
 // Server представляє HTTP-сервер API.
@@ -22,11 +28,27 @@ type Server struct {
 	node    *p2p.Node
 	mempool *chain.Mempool
 	bs      *database.BlockStorage
+	clients map[*websocket.Conn]bool
+	mu      sync.Mutex
 }
 
 // NewServer створює новий екземпляр API-сервера.
 func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage) *Server {
 	app := fiber.New()
+
+	// Rate limiting: 100 запитів на 1 хвилину з одного IP
+	app.Use(limiter.New(limiter.Config{
+		Max:        1000,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(429).JSON(fiber.Map{
+				"error": "Забагато запитів. Спробуйте пізніше.",
+			})
+		},
+	}))
 
 	app.Use(func(c *fiber.Ctx) error {
 		start := time.Now()
@@ -54,7 +76,10 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 		node:    node,
 		mempool: mempool,
 		bs:      bs,
+		clients: make(map[*websocket.Conn]bool),
 	}
+
+	go server.runWebSocketPoller()
 
 	server.setupRoutes()
 	return server
@@ -62,12 +87,38 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 
 // setupRoutes реєструє всі обробники для маршрутів API.
 func (s *Server) setupRoutes() {
-	s.app.Get("/", s.handleGetStatus)
+	s.app.Static("/", "./public")
+	s.app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		s.mu.Lock()
+		s.clients[c] = true
+		s.mu.Unlock()
+
+		s.sendFullState(c)
+
+		defer func() {
+			s.mu.Lock()
+			delete(s.clients, c)
+			s.mu.Unlock()
+			c.Close()
+		}()
+
+		// Keep connection alive
+		for {
+			if _, _, err := c.ReadMessage(); err != nil {
+				break
+			}
+		}
+	}))
+	s.app.Get("/status", s.handleGetStatus)
 	s.app.Get("/block/:id", s.handleGetBlock)
 	s.app.Get("/txs", s.handleGetMempoolLen)
 	s.app.Get("/blocks", s.handleGetAllBlocks)
 	s.app.Get("/addr/:id", s.handleGetBalance)
+	s.app.Get("/validators", s.handleGetValidators)
 	s.app.Get("/lastBlock", s.handleGetLastBlock)
+	s.app.Get("/chainSize", s.handleGetChainSize)
+	s.app.Get("/nextProposer", s.handleGetNextProposer)
+	s.app.Get("/currentRound", s.handleGetCurrentRound)
 	s.app.Post("/tx", s.handlePostTx)
 
 	// щоб сервер не відповідав усіляким підораскам
@@ -147,16 +198,22 @@ func (s *Server) handlePostTx(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleGetMempoolLen(c *fiber.Ctx) error {
-	return c.SendString(strconv.Itoa(len(s.mempool.TXs)))
+	txs := s.mempool.GetTransactions()
+	return c.JSON(txs)
 }
 
 func (s *Server) handleGetBalance(c *fiber.Ctx) error {
 	addr := c.Params("id")
+	addr = strings.TrimPrefix(addr, "0x")
 	addrBytes, err := hex.DecodeString(addr)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{
-			"error": err,
-		})
+		// Try base64 if hex fails
+		addrBytes, err = base64.StdEncoding.DecodeString(addr)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"error": "Invalid address format (must be hex or base64)",
+			})
+		}
 	}
 
 	wallet, err := s.bs.GetWalletByAddress(addrBytes)
@@ -178,6 +235,103 @@ func (s *Server) handleGetLastBlock(c *fiber.Ctx) error {
 	return c.JSON(lastBlock)
 }
 
+func (s *Server) handleGetChainSize(c *fiber.Ctx) error {
+	size, err := s.bs.GetSize()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"size_mb": float64(size) / (1024 * 1024),
+	})
+}
+
+func (s *Server) handleGetValidators(c *fiber.Ctx) error {
+	validators, err := s.bs.GetValidatorsList()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	var res []fiber.Map
+	for _, v := range *validators {
+		wallet, _ := s.bs.GetWalletByAddress(v.Address)
+		res = append(res, fiber.Map{
+			"address": v.Address,
+			"stake":   v.Amount,
+			"balance": wallet.Balance,
+		})
+	}
+
+	return c.JSON(res)
+}
+
+func (s *Server) handleGetNextProposer(c *fiber.Ctx) error {
+	return c.JSON(s.node.GetNextProposer())
+}
+
+func (s *Server) handleGetCurrentRound(c *fiber.Ctx) error {
+	return c.JSON(s.node.GetCurrentRound())
+}
+
+func (s *Server) runWebSocketPoller() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// Ініціалізація поточною висотою
+	lastBlock, err := s.bs.GetLastBlock()
+	var lastHeight uint32 = 0
+	if err == nil {
+		lastHeight = lastBlock.Height
+	}
+
+	for range ticker.C {
+		// Перевірка нових блоків
+		lastBlock, err := s.bs.GetLastBlock()
+		if err == nil && lastBlock.Height > lastHeight {
+			lastHeight = lastBlock.Height
+			data, _ := json.Marshal(lastBlock)
+
+			s.mu.Lock()
+			for client := range s.clients {
+				client.WriteMessage(websocket.TextMessage, data)
+			}
+			s.mu.Unlock()
+		}
+	}
+}
+
+// Допоміжна функція для відправки повного стану новому клієнту
+func (s *Server) sendFullState(c *websocket.Conn) {
+	blocks, _ := s.bs.GetAllBlocks()
+	// Сортуємо блоки по висоті для коректного відображення в UI
+	sort.Slice(blocks, func(i, j int) bool {
+		return blocks[i].Height < blocks[j].Height
+	})
+
+	validators, _ := s.bs.GetValidatorsList()
+	lastBlock, _ := s.bs.GetLastBlock()
+	mempool := s.mempool.GetTransactions()
+	size, _ := s.bs.GetSize()
+
+	state := fiber.Map{
+		"stats": fiber.Map{
+			"lastHeight":    lastBlock.Height,
+			"mempoolSize":   len(mempool),
+			"currentRound":  s.node.GetCurrentRound(),
+			"nextProposer":  s.node.GetNextProposer(),
+			"sizeMb":        float64(size) / (1024 * 1024),
+		},
+		"blocks":     blocks,
+		"validators": validators,
+	}
+
+	data, _ := json.Marshal(state)
+	c.WriteMessage(websocket.TextMessage, data)
+}
 // Start запускає HTTP-сервер.
 func (s *Server) Start() {
 	log.Fatal().Err(s.app.Listen(":8081")).Msg("помилка запуску http серверу")

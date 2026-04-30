@@ -12,19 +12,30 @@ import (
 )
 
 func (n *Node) syncBlockchain() {
-	// OPTIMIZE: зробити отримання нових блоків в btach
+	// Гарантуємо що одночасно виконується лише одна синхронізація.
+	// Це важливо бо syncBlockchain може тригеритись з кількох місць:
+	// Start(), NotifyBundle.ConnectedF, fullBlockVerefication.
+	if !n.syncing.CompareAndSwap(false, true) {
+		return
+	}
+	defer n.syncing.Store(false)
+
+	// OPTIMIZE: зробити отримання нових блоків в batch
 	for {
-		localBlockHeight, err := n.bs.GetLastBlock()
+		localBlock, err := n.bs.GetLastBlock()
 		if err != nil {
-			panic(err)
+			log.Error().Err(err).Msg("помилка отримання останнього блоку при синхронізації")
+			return
 		}
 		if err := n.setNextProposer(); err != nil {
-			panic(err)
+			log.Error().Err(err).Msg("помилка вибору proposer при синхронізації")
+			return
 		}
 
-		data, err := json.Marshal(chain.Block{Height: localBlockHeight.Height + 1})
+		data, err := json.Marshal(chain.Block{Height: localBlock.Height + 1})
 		if err != nil {
-			log.Fatal().Err(err).Msg("помилка розпаковки блоку")
+			log.Error().Err(err).Msg("помилка серіалізації запиту блоку")
+			return
 		}
 
 		m := Message{
@@ -33,9 +44,9 @@ func (n *Node) syncBlockchain() {
 			Data:      data,
 			Pub:       n.keys.Pub,
 		}
-		err = m.sign(n.keys.Priv)
-		if err != nil {
-			log.Fatal().Err(err).Msg("помилка підпису повідомлення")
+		if err = m.sign(n.keys.Priv); err != nil {
+			log.Error().Err(err).Msg("помилка підпису повідомлення при синхронізації")
+			return
 		}
 
 		peerForSync := n.chooseRandomPeer()
@@ -43,49 +54,55 @@ func (n *Node) syncBlockchain() {
 			log.Warn().Msg("не було знайдено peer для синхронізації")
 			return
 		}
+
 		respMsg, err := n.sendStreamMessage(*peerForSync, &m)
 		if err != nil {
-			log.Fatal().Err(err).Msg("помилка відправки повідомлення")
+			log.Error().Err(err).Msg("помилка відправки повідомлення при синхронізації")
+			return
 		}
 
 		var respBlock chain.Block
 		if err = json.Unmarshal(respMsg.Data, &respBlock); err != nil {
-			log.Fatal().Err(err).Msg("помилка розпаковки блоку")
+			log.Error().Err(err).Msg("помилка десеріалізації отриманого блоку")
+			return
 		}
 
-		// це якщо запитаного блоку не існує. це означає, що локальна база вже актуальна і має останній блок
-		// TODO: винести в окерму функцію
-		if respBlock.Height < localBlockHeight.Height+1 {
+		// якщо запитаного блоку немає — ланцюжок актуальний
+		if respBlock.Height < localBlock.Height+1 {
 			log.Info().Msg("blockchain is up to date!")
 
 			if err := n.setNextProposer(); err != nil {
-				panic(err)
+				log.Error().Err(err).Msg("помилка вибору proposer після синхронізації")
+				return
 			}
 
 			if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
-				blockProposalMsg, err := n.getMsgBlockProposalMsg()
-				if err != nil {
-					panic(err)
-				}
-
-				if err := n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
-					panic(err)
-				}
+				go n.tryProposeBlock()
 			}
 			return
 		}
 
 		if err := n.fullBlockVerefication(&respBlock); err != nil {
-			log.Fatal().Err(err).Msg("помилочка")
+			log.Error().Err(err).Msg("блок не пройшов верифікацію при синхронізації")
+			return
 		}
 		if err := n.bs.SaveBlock(&respBlock); err != nil {
-			panic(err)
+			log.Error().Err(err).Msg("помилка збереження блоку при синхронізації")
+			return
 		}
+		n.lastBlockTime = time.Now()
+
+		if err := n.applyPenalties(&respBlock); err != nil {
+			log.Error().Err(err).Msg("помилка застосування штрафів при синхронізації")
+		}
+
 		if err := n.addValidatorsToDB(&respBlock); err != nil {
-			panic(err)
+			log.Error().Err(err).Msg("помилка додавання валідаторів при синхронізації")
+			return
 		}
 		if err := n.updateBalancesNonces(&respBlock); err != nil {
-			panic(err)
+			log.Error().Err(err).Msg("помилка оновлення балансів при синхронізації")
+			return
 		}
 		log.Info().Uint32("height", respBlock.Height).Int64("latency", time.Now().UnixMilli()-respMsg.Timestamp).Msg("додано новий блок до ланцюжка")
 	}

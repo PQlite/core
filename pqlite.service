@@ -1,0 +1,21 @@
+[Unit]
+Description=PQlite Blockchain Node
+After=network.target
+
+[Service]
+# Використання змінного користувача
+User=%U
+Group=%U
+
+# Вкажіть повний шлях до папки з проєктом
+WorkingDirectory=/home/%u/Documents/go/PQlite/core
+
+# Шлях до бінарного файлу ноди
+ExecStart=/home/%u/Documents/go/PQlite/core/pqlite
+
+# Перезапуск у разі падіння
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

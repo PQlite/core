@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net"
 	"sort"
 	"strconv"
@@ -16,7 +17,9 @@ import (
 	"github.com/PQlite/core/p2p"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/websocket/v2"
 	"github.com/rs/zerolog/log"
+	"sync"
 )
 
 // Server представляє HTTP-сервер API.
@@ -25,6 +28,8 @@ type Server struct {
 	node    *p2p.Node
 	mempool *chain.Mempool
 	bs      *database.BlockStorage
+	clients map[*websocket.Conn]bool
+	mu      sync.Mutex
 }
 
 // NewServer створює новий екземпляр API-сервера.
@@ -33,7 +38,7 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 
 	// Rate limiting: 100 запитів на 1 хвилину з одного IP
 	app.Use(limiter.New(limiter.Config{
-		Max:        100,
+		Max:        1000,
 		Expiration: 1 * time.Minute,
 		KeyGenerator: func(c *fiber.Ctx) string {
 			return c.IP()
@@ -71,7 +76,10 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 		node:    node,
 		mempool: mempool,
 		bs:      bs,
+		clients: make(map[*websocket.Conn]bool),
 	}
+
+	go server.runWebSocketPoller()
 
 	server.setupRoutes()
 	return server
@@ -80,6 +88,27 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 // setupRoutes реєструє всі обробники для маршрутів API.
 func (s *Server) setupRoutes() {
 	s.app.Static("/", "./public")
+	s.app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		s.mu.Lock()
+		s.clients[c] = true
+		s.mu.Unlock()
+
+		s.sendFullState(c)
+
+		defer func() {
+			s.mu.Lock()
+			delete(s.clients, c)
+			s.mu.Unlock()
+			c.Close()
+		}()
+
+		// Keep connection alive
+		for {
+			if _, _, err := c.ReadMessage(); err != nil {
+				break
+			}
+		}
+	}))
 	s.app.Get("/status", s.handleGetStatus)
 	s.app.Get("/block/:id", s.handleGetBlock)
 	s.app.Get("/txs", s.handleGetMempoolLen)
@@ -248,6 +277,61 @@ func (s *Server) handleGetCurrentRound(c *fiber.Ctx) error {
 	return c.JSON(s.node.GetCurrentRound())
 }
 
+func (s *Server) runWebSocketPoller() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// Ініціалізація поточною висотою
+	lastBlock, err := s.bs.GetLastBlock()
+	var lastHeight uint32 = 0
+	if err == nil {
+		lastHeight = lastBlock.Height
+	}
+
+	for range ticker.C {
+		// Перевірка нових блоків
+		lastBlock, err := s.bs.GetLastBlock()
+		if err == nil && lastBlock.Height > lastHeight {
+			lastHeight = lastBlock.Height
+			data, _ := json.Marshal(lastBlock)
+
+			s.mu.Lock()
+			for client := range s.clients {
+				client.WriteMessage(websocket.TextMessage, data)
+			}
+			s.mu.Unlock()
+		}
+	}
+}
+
+// Допоміжна функція для відправки повного стану новому клієнту
+func (s *Server) sendFullState(c *websocket.Conn) {
+	blocks, _ := s.bs.GetAllBlocks()
+	// Сортуємо блоки по висоті для коректного відображення в UI
+	sort.Slice(blocks, func(i, j int) bool {
+		return blocks[i].Height < blocks[j].Height
+	})
+
+	validators, _ := s.bs.GetValidatorsList()
+	lastBlock, _ := s.bs.GetLastBlock()
+	mempool := s.mempool.GetTransactions()
+	size, _ := s.bs.GetSize()
+
+	state := fiber.Map{
+		"stats": fiber.Map{
+			"lastHeight":    lastBlock.Height,
+			"mempoolSize":   len(mempool),
+			"currentRound":  s.node.GetCurrentRound(),
+			"nextProposer":  s.node.GetNextProposer(),
+			"sizeMb":        float64(size) / (1024 * 1024),
+		},
+		"blocks":     blocks,
+		"validators": validators,
+	}
+
+	data, _ := json.Marshal(state)
+	c.WriteMessage(websocket.TextMessage, data)
+}
 // Start запускає HTTP-сервер.
 func (s *Server) Start() {
 	log.Fatal().Err(s.app.Listen(":8081")).Msg("помилка запуску http серверу")

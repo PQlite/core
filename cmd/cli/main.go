@@ -47,6 +47,10 @@ func main() {
 		cmdMempool(os.Args[2:])
 	case "status":
 		cmdStatus(os.Args[2:])
+	case "stake":
+		cmdStake(os.Args[2:])
+	case "unstake":
+		cmdUnstake(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "невідома команда: %s\n\n", os.Args[1])
 		printHelp()
@@ -62,11 +66,65 @@ func printHelp() {
   balance <hex_адреса>  [-node <url>]             Перевірити баланс
   send    -to <hex_адреса> -amount <n> [-fee <n>]
           [-key <файл>] [-nonce <n>] [-node <url>]
+  stake   -amount <n>                             Додати стейк
+  unstake -amount <n>                             Забрати стейк
   block   <висота>  [-node <url>]                 Отримати блок
   blocks  [-node <url>]                           Список усіх блоків
   mempool [-node <url>]                           Розмір mempool
   status  [-node <url>]                           Статус ноди
 `)
+}
+
+// --- stake/unstake ---
+
+func cmdStake(args []string) {
+	sendTxWithTo(args, "stake", "stake")
+}
+
+func cmdUnstake(args []string) {
+	sendTxWithTo(args, "unstake", "unstake")
+}
+
+func sendTxWithTo(args []string, label, to string) {
+	fs := flag.NewFlagSet(label, flag.ExitOnError)
+	keyPath := fs.String("key", defaultKeyFile, "файл з ключами")
+	amountFloat := fs.Float64("amount", 0, "сума")
+	node := fs.String("node", defaultNode, "адреса ноди")
+	fs.Parse(args)
+
+	if *amountFloat <= 0 {
+		fmt.Fprintf(os.Stderr, "вкажіть -amount > 0 для %s\n", label)
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	amount := int64(*amountFloat * float64(chain.Precision))
+	kf := loadKey(*keyPath)
+
+	tx := chain.Transaction{
+		From:      kf.Pub,
+		To:        []byte(to),
+		Amount:    amount,
+		Fee:       0,
+		Timestamp: time.Now().UnixMilli(),
+		Nonce:     fetchNextNonce(*node, kf.Pub),
+	}
+	fatal(tx.Sign(kf.Priv), "помилка підпису")
+
+	data, err := json.Marshal(tx)
+	fatal(err, "помилка серіалізації")
+
+	resp, err := http.Post(*node+"/tx", "application/json", bytes.NewReader(data))
+	fatal(err, "помилка відправки")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Fprintf(os.Stderr, "помилка від ноди: %s\n", body)
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s успішно відправлено (сума: %s PQL)\n", label, chain.FormatAmount(amount))
 }
 
 // --- keygen ---

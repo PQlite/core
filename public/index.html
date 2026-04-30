@@ -271,8 +271,31 @@
                 toast: { show: false, message: '' },
                 
                 async init() {
-                    await this.fetchData();
-                    setInterval(() => this.fetchData(), 5000);
+                    // WebSocket для отримання всіх даних
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+                    
+                    ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        
+                        // Якщо це блок
+                        if (data.Height !== undefined) {
+                            const newBlock = this.formatBlock(data);
+                            if (!this.blocks.find(b => b.Hash === newBlock.Hash)) {
+                                this.blocks.push(newBlock);
+                                this.stats.lastHeight = newBlock.Height;
+                                this.toast.message = 'New block #' + newBlock.Height;
+                                this.toast.show = true;
+                                setTimeout(() => this.toast.show = false, 2000);
+                            }
+                        } 
+                        // Якщо це повний статус (наприклад, при підключенні)
+                        else if (data.stats) {
+                            this.stats = data.stats;
+                            this.validators = data.validators;
+                            this.blocks = data.blocks.map(b => this.formatBlock(b));
+                        }
+                    };
                 },
 
                 copy(text) {

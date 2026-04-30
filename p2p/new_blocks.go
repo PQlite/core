@@ -117,11 +117,11 @@ func (n *Node) addRewardTx(b *chain.Block) error {
 }
 
 func (n *Node) applyPenalties(block *chain.Block) error {
-	if block.Round == 0 {
+	if block.Round == 0 || block.Height == 0 {
 		return nil
 	}
 
-	lastBlock, err := n.bs.GetBlockByHash(block.PrevHash)
+	lastBlock, err := n.bs.GetBlock(block.Height - 1)
 	if err != nil {
 		return fmt.Errorf("помилка отримання попереднього блоку для штрафів: %w", err)
 	}

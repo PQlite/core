@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"time"
 	"github.com/PQlite/core/chain"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
@@ -10,6 +11,10 @@ const (
 	STAKE        = "stake"
 	REWARDWALLET = "reward"
 	REWARD       = 1 * chain.Precision
+
+	// consensus config
+	MinBlockTime     = 1 * time.Second // Мінімальний час між блоками
+	AllowEmptyBlocks = false            // Якщо false, чекаємо хоча б одну транзакцію
 
 	// network
 	ns                         = "PQlite_test"

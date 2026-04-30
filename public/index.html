@@ -101,8 +101,19 @@
 
             <!-- Transactions -->
             <div class="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden shadow-xl">
-                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-750">
-                    <h2 class="text-xl font-bold">Recent TXs</h2>
+                <div class="px-6 py-4 border-b border-gray-700 bg-gray-750">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-xl font-bold">Recent TXs</h2>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                        <template x-for="f in ['TRANSFER', 'REWARD', 'STAKE', 'UNSTAKE', 'PENALTY']">
+                            <button @click="toggleFilter(f)" 
+                                class="text-[9px] uppercase font-bold px-2 py-1 rounded transition-colors border"
+                                :class="activeFilters.includes(f) ? 'bg-blue-600/20 text-blue-400 border-blue-500/30' : 'bg-gray-900/50 text-gray-600 border-gray-800'"
+                                x-text="f">
+                            </button>
+                        </template>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
@@ -110,11 +121,14 @@
                             <tr><th class="px-4 py-3">From / To</th><th class="px-4 py-3 text-right">Amount</th></tr>
                         </thead>
                         <tbody class="divide-y divide-gray-700">
-                            <template x-for="(tx, idx) in recentTxs.slice(0, 15)" :key="getTxKey(tx, idx)">
+                            <template x-for="(tx, idx) in recentTxs.filter(t => activeFilters.includes(getTxType(t).label)).slice(0, 15)" :key="getTxKey(tx, idx)">
                                 <tr class="hover:bg-gray-700/50 cursor-pointer" @click="showTxDetails(tx)">
                                     <td class="px-4 py-4 font-mono text-[10px] text-gray-400 leading-tight">
-                                        <div class="copy-hint" @click.stop="copy(tx.from)" x-text="displayAddr(tx.from)"></div>
-                                        <div class="text-gray-600 mt-1">→ <span class="copy-hint" @click.stop="copy(tx.to)" x-text="displayAddr(tx.to)"></span></div>
+                                        <div class="flex items-center mb-1">
+                                            <span class="text-[8px] font-bold px-1 py-0.5 rounded mr-2" :class="getTxType(tx).class" x-text="getTxType(tx).label"></span>
+                                            <span class="copy-hint" @click.stop="copy(tx.from)" x-text="displayAddr(tx.from)"></span>
+                                        </div>
+                                        <div class="text-gray-600 ml-10">→ <span class="copy-hint" @click.stop="copy(tx.to)" x-text="displayAddr(tx.to)"></span></div>
                                     </td>
                                     <td class="px-4 py-4 text-right text-green-400 font-bold text-xs" x-text="formatAmount(tx.amount)"></td>
                                 </tr>
@@ -227,6 +241,10 @@
                             <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Time</p>
                             <p class="text-xs text-white" x-text="fullDate(selectedTx?.timestamp)"></p>
                         </div>
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700" x-show="selectedTx?.blockHeight">
+                            <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Included in Block</p>
+                            <p class="text-xs font-bold text-blue-400" x-text="'#' + selectedTx?.blockHeight"></p>
+                        </div>
                         <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 cursor-pointer" @click="copy(selectedTx?.signature)" x-show="selectedTx?.signature">
                             <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Digital Signature</p>
                             <p class="font-mono text-[9px] break-all text-gray-500" x-text="selectedTx?.signature"></p>
@@ -265,7 +283,8 @@
     <script>
         function explorer() {
             return {
-                blocks: [], recentTxs: [], validators: [], blocksLimit: 10,
+                blocks: [], recentTxs: [], validators: [], blocksLimit: 10, 
+                activeFilters: ['TRANSFER', 'REWARD', 'STAKE', 'UNSTAKE', 'PENALTY'],
                 stats: { lastHeight: 0, mempoolSize: 0, currentRound: 0, nextProposer: '', sizeMb: 0 },
                 searchQuery: '', selectedBlock: null, selectedTx: null, selectedAddr: null, selectedAddrHash: '',
                 toast: { show: false, message: '' },
@@ -320,9 +339,8 @@
                             let allTxs = [];
                             this.blocks.slice().reverse().forEach(b => {
                                 (b.Transactions || []).forEach(tx => {
-                                    if (!this.isSystem(this.getVal(tx, 'from')) && !this.isSystem(this.getVal(tx, 'to'))) {
-                                        allTxs.push(tx);
-                                    }
+                                    tx.blockHeight = b.Height;
+                                    allTxs.push(tx);
                                 });
                             });
                             this.recentTxs = allTxs.slice(0, 20);
@@ -403,26 +421,43 @@
                 isSystem(addr) {
                     if (!addr) return false;
                     const h = String(addr).toLowerCase();
-                    return h === '726577617264' || h === '7374616b65' || h === 'reward' || h === 'stake';
+                    return h === '726577617264' || h === '7374616b65' || h === '756e7374616b65' || h === '66696e65' || 
+                           h === 'reward' || h === 'stake' || h === 'unstake' || h === 'fine';
                 },
 
                 displayAddr(addr) {
                     if (!addr) return 'n/a';
                     const h = String(addr).toLowerCase();
-                    if (h === '726577617264') return 'SYSTEM (Reward)';
-                    if (h === '7374616b65') return 'SYSTEM (Stake)';
+                    if (h === '726577617264' || h === 'reward') return 'SYSTEM (Reward)';
+                    if (h === '7374616b65' || h === 'stake') return 'SYSTEM (Stake)';
+                    if (h === '756e7374616b65' || h === 'unstake') return 'SYSTEM (Unstake)';
+                    if (h === '66696e65' || h === 'fine') return 'SYSTEM (Fine/Penalty)';
                     return this.truncateHash(addr);
                 },
 
                 getTxType(tx) {
-                    if (this.isSystem(tx.from)) return { label: 'REWARD', class: 'text-yellow-500 bg-yellow-500/10' };
-                    if (this.isSystem(tx.to)) return { label: 'STAKE', class: 'text-purple-500 bg-purple-500/10' };
+                    const from = String(tx.from).toLowerCase();
+                    const to = String(tx.to).toLowerCase();
+                    
+                    if (from === '726577617264' || from === 'reward') return { label: 'REWARD', class: 'text-yellow-500 bg-yellow-500/10' };
+                    if (to === '7374616b65' || to === 'stake') return { label: 'STAKE', class: 'text-purple-500 bg-purple-500/10' };
+                    if (to === '756e7374616b65' || to === 'unstake') return { label: 'UNSTAKE', class: 'text-orange-500 bg-orange-500/10' };
+                    if (to === '66696e65' || to === 'fine') return { label: 'PENALTY', class: 'text-red-500 bg-red-500/10' };
+                    
                     return { label: 'TRANSFER', class: 'text-green-500 bg-green-500/10' };
                 },
 
                 getTxKey(tx, index) { 
                     const sig = this.getVal(tx, 'signature');
                     return (sig && sig !== '') ? sig : `tx-${this.getVal(tx, 'nonce')}-${index}`; 
+                },
+
+                toggleFilter(f) {
+                    if (this.activeFilters.includes(f)) {
+                        this.activeFilters = this.activeFilters.filter(x => x !== f);
+                    } else {
+                        this.activeFilters.push(f);
+                    }
                 },
 
                 truncateHash(h) { 

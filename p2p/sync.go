@@ -100,6 +100,10 @@ func (n *Node) syncBlockchain() {
 			log.Error().Err(err).Msg("помилка додавання валідаторів при синхронізації")
 			return
 		}
+		if err := n.deleteValidatorsFromDB(&respBlock); err != nil {
+			log.Error().Err(err).Msg("помилка видалення валідаторів при синхронізації")
+			return
+		}
 		if err := n.updateBalancesNonces(&respBlock); err != nil {
 			log.Error().Err(err).Msg("помилка оновлення балансів при синхронізації")
 			return

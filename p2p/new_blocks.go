@@ -339,7 +339,7 @@ func (n *Node) setNextProposer() error {
 }
 
 func (n *Node) isSystemAddr(addr []byte) bool {
-	return bytes.Equal(addr, []byte(REWARDWALLET)) || bytes.Equal(addr, []byte(STAKE)) || bytes.Equal(addr, []byte(FINEWALLET))
+	return bytes.Equal(addr, []byte(REWARDWALLET)) || bytes.Equal(addr, []byte(STAKE)) || bytes.Equal(addr, []byte(FINEWALLET)) || bytes.Equal(addr, []byte(UNSTAKE))
 }
 
 func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transaction, []*chain.Transaction) {
@@ -453,6 +453,28 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 			continue
 		}
 
+		// При Unstake гроші повертаються з системи (стейку) на баланс гаманця
+		if bytes.Equal(tx.To, []byte(UNSTAKE)) {
+			walletFrom, err := n.bs.GetWalletByAddress(tx.From)
+			if err != nil {
+				return err
+			}
+			walletFrom.Balance += tx.Amount
+			walletFrom.Balance -= tx.Fee
+			walletFrom.Nonce++
+			if err = n.bs.UpdateBalance(&walletFrom); err != nil {
+				return err
+			}
+
+			// Комісія йде в reward
+			if tx.Fee > 0 {
+				rewardWallet, _ := n.bs.GetWalletByAddress([]byte(REWARDWALLET))
+				rewardWallet.Balance += tx.Fee
+				n.bs.UpdateBalance(&rewardWallet)
+			}
+			continue
+		}
+
 		walletFrom, err := n.bs.GetWalletByAddress(tx.From)
 		if err != nil {
 			return err
@@ -512,13 +534,23 @@ func (n *Node) addValidatorsToDB(block *chain.Block) error {
 
 func (n *Node) deleteValidatorsFromDB(block *chain.Block) error {
 	for _, tx := range block.Transactions {
-		if bytes.Equal(tx.To, []byte("unstake")) {
-			validator := &chain.Validator{
-				Address: tx.From,
-				Amount:  tx.Amount,
+		if bytes.Equal(tx.To, []byte(UNSTAKE)) {
+			validator, _ := n.bs.GetValidator(tx.From)
+			if validator == nil {
+				continue
 			}
-			if err := n.bs.DeleteValidator(validator); err != nil {
-				return err
+
+			validator.Amount -= tx.Amount
+			if validator.Amount <= 0 {
+				if err := n.bs.DeleteValidator(validator); err != nil {
+					return err
+				}
+				log.Info().Hex("address", validator.Address).Msg("валідатора видалено (повний unstake)")
+			} else {
+				if err := n.bs.AddValidator(validator); err != nil {
+					return err
+				}
+				log.Info().Hex("address", validator.Address).Int64("залишок", validator.Amount).Msg("оновлено стейк валідатора (частковий unstake)")
 			}
 		}
 	}

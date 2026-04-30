@@ -9,6 +9,7 @@ import (
 const (
 	// wallets
 	STAKE        = "stake"
+	UNSTAKE      = "unstake"
 	REWARDWALLET = "reward"
 	FINEWALLET   = "fine"
 	REWARD       = 1 * chain.Precision

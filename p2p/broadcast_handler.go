@@ -305,10 +305,17 @@ func (n *Node) handleMsgCommit(data []byte) {
 }
 
 func (n *Node) tryProposeBlock() {
+	// Подвійна перевірка: чи ми все ще є proposer-ом?
+	if !bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+		return
+	}
+
 	if !n.isProposing.CompareAndSwap(false, true) {
 		return
 	}
 	defer n.isProposing.Store(false)
+
+	log.Info().Msg("я proposer — починаю створення блоку")
 
 	blockProposalMsg, err := n.getMsgBlockProposalMsg()
 	if err != nil {

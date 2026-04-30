@@ -77,15 +77,7 @@ func (n *Node) syncBlockchain() {
 			}
 
 			if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
-				blockProposalMsg, err := n.getMsgBlockProposalMsg()
-				if err != nil {
-					log.Error().Err(err).Msg("помилка створення block proposal після синхронізації")
-					return
-				}
-
-				if err := n.topic.broadcast(blockProposalMsg, n.ctx); err != nil {
-					log.Error().Err(err).Msg("помилка broadcast block proposal після синхронізації")
-				}
+				go n.tryProposeBlock()
 			}
 			return
 		}

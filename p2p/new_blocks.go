@@ -75,6 +75,7 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 
 	block := chain.Block{
 		Height:       lastBlock.Height + 1,
+		Round:        n.currentRound,
 		Timestamp:    time.Now().UnixMilli(),
 		PrevHash:     lastBlock.Hash,
 		Proposer:     n.keys.Pub,
@@ -115,6 +116,52 @@ func (n *Node) addRewardTx(b *chain.Block) error {
 	return nil
 }
 
+func (n *Node) applyPenalties(block *chain.Block) error {
+	if block.Round == 0 {
+		return nil
+	}
+
+	lastBlock, err := n.bs.GetBlockByHash(block.PrevHash)
+	if err != nil {
+		return fmt.Errorf("помилка отримання попереднього блоку для штрафів: %w", err)
+	}
+
+	validators, err := n.bs.GetValidatorsList()
+	if err != nil {
+		return fmt.Errorf("помилка отримання списку валідаторів для штрафів: %w", err)
+	}
+
+	for r := uint32(0); r < block.Round; r++ {
+		missedProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, r)
+		if err != nil {
+			continue
+		}
+
+		// Штраф: 0.1% від стейку
+		penalty := missedProposer.Amount / 1000
+		if penalty == 0 && missedProposer.Amount > 0 {
+			penalty = 1
+		}
+
+		log.Warn().
+			Hex("proposer", missedProposer.Address).
+			Uint32("height", block.Height).
+			Uint32("round", r).
+			Int64("penalty", penalty).
+			Msg("штраф валідатора за пропуск блоку")
+
+		missedProposer.Amount -= penalty
+		if missedProposer.Amount < 0 {
+			missedProposer.Amount = 0
+		}
+
+		if err := n.bs.AddValidator(missedProposer); err != nil {
+			return fmt.Errorf("помилка оновлення валідатора після штрафу: %w", err)
+		}
+	}
+	return nil
+}
+
 func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	lastLocalBlock, err := n.bs.GetLastBlock()
 	if err != nil {
@@ -140,14 +187,27 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 		return fmt.Errorf("невірний підпис блоку")
 	}
 
-	// Якщо proposer не той, кого ми чекали — логуємо це, але ПРИЙМАЄМО блок, якщо він валідний.
-	// Це дозволяє мережі вирівняти раунди автоматично.
-	if !bytes.Equal(block.Proposer, n.nextProposer.Address) {
+	// ВАЖЛИВО: Перевіряємо чи proposer блоку відповідає очікуваному для цього раунду
+	validators, err := n.bs.GetValidatorsList()
+	if err != nil {
+		return fmt.Errorf("помилка отримання списку валідаторів: %w", err)
+	}
+	expectedProposer, err := chain.SelectNextProposer(lastLocalBlock.Hash, *validators, block.Round)
+	if err != nil {
+		return fmt.Errorf("помилка вибору очікуваного proposer-а: %w", err)
+	}
+
+	if !bytes.Equal(block.Proposer, expectedProposer.Address) {
+		return fmt.Errorf("невірний proposer для висоти %d раунду %d", block.Height, block.Round)
+	}
+
+	// Якщо раунд блоку відрізняється від нашого — оновлюємо свій стан
+	if block.Round != n.currentRound {
 		log.Warn().
-			Hex("received_proposer", block.Proposer).
-			Hex("expected_proposer", n.nextProposer.Address).
-			Uint32("round", n.currentRound).
-			Msg("Блок прийнято від неочікуваного proposer-а (вирівнювання консенсусу)")
+			Uint32("local_round", n.currentRound).
+			Uint32("block_round", block.Round).
+			Msg("раунд блоку відрізняється від локального — синхронізація раунду")
+		n.currentRound = block.Round
 	}
 
 	if err := block.VerifyTransactions(); err != nil {

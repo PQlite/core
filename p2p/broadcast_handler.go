@@ -280,7 +280,12 @@ func (n *Node) handleMsgCommit(data []byte) {
 		log.Error().Err(err).Msg("помилка збереження блоку")
 		return
 	}
+	n.lastBlockTime = time.Now()
 	log.Info().Hex("hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("новий блок додано до ланцюжка")
+
+	if err := n.applyPenalties(&commit.Block); err != nil {
+		log.Error().Err(err).Msg("помилка застосування штрафів")
+	}
 
 	go n.mempool.ClearMempool(commit.Block.Transactions)
 
@@ -369,6 +374,10 @@ func (n *Node) advanceRound() {
 		Hex("новий proposer", n.nextProposer.Address).
 		Uint32("новий раунд", n.currentRound).
 		Msg("перехід до наступного раунду")
+
+	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+		go n.tryProposeBlock()
+	}
 }
 
 // rejectCurrentProposer зберігає поточний (proposer, round) перед просуванням раунду,

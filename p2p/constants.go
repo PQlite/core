@@ -14,7 +14,7 @@ const (
 
 	// consensus config
 	MinBlockTime     = 1 * time.Second // Мінімальний час між блоками
-	AllowEmptyBlocks = false            // Якщо false, чекаємо хоча б одну транзакцію
+	AllowEmptyBlocks = true            // Якщо false, чекаємо хоча б одну транзакцію
 
 	// network
 	ns                         = "PQlite_test"

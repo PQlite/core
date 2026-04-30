@@ -15,6 +15,7 @@ import (
 	"github.com/PQlite/core/database"
 	"github.com/PQlite/core/p2p"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/rs/zerolog/log"
 )
 
@@ -29,6 +30,20 @@ type Server struct {
 // NewServer створює новий екземпляр API-сервера.
 func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage) *Server {
 	app := fiber.New()
+
+	// Rate limiting: 100 запитів на 1 хвилину з одного IP
+	app.Use(limiter.New(limiter.Config{
+		Max:        100,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(429).JSON(fiber.Map{
+				"error": "Забагато запитів. Спробуйте пізніше.",
+			})
+		},
+	}))
 
 	app.Use(func(c *fiber.Ctx) error {
 		start := time.Now()

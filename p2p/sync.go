@@ -90,6 +90,12 @@ func (n *Node) syncBlockchain() {
 			log.Error().Err(err).Msg("помилка збереження блоку при синхронізації")
 			return
 		}
+		n.lastBlockTime = time.Now()
+
+		if err := n.applyPenalties(&respBlock); err != nil {
+			log.Error().Err(err).Msg("помилка застосування штрафів при синхронізації")
+		}
+
 		if err := n.addValidatorsToDB(&respBlock); err != nil {
 			log.Error().Err(err).Msg("помилка додавання валідаторів при синхронізації")
 			return

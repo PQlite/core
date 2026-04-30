@@ -17,6 +17,7 @@ import (
 
 type Block struct {
 	Height       uint32         // Номер блоку
+	Round        uint32         // Раунд в якому був створений блок
 	Timestamp    int64          // UNIX час
 	PrevHash     []byte         // Хеш попереднього блоку
 	Hash         []byte         // Хеш цього блоку (розраховується по іншим полям)
@@ -119,6 +120,7 @@ func (b *Block) MarshalDeterministic() ([]byte, error) {
 	// Для хешування нам потрібні всі дані блоку КРІМ Hash та Signature
 	type BlockForHashing struct {
 		Height       uint32
+		Round        uint32
 		Timestamp    int64
 		PrevHash     []byte
 		Proposer     []byte
@@ -129,6 +131,7 @@ func (b *Block) MarshalDeterministic() ([]byte, error) {
 
 	data := BlockForHashing{
 		Height:       b.Height,
+		Round:        b.Round,
 		Timestamp:    b.Timestamp,
 		PrevHash:     b.PrevHash,
 		Proposer:     b.Proposer,
@@ -167,6 +170,7 @@ func CreateGenesisBlock() (Block, Validator, Wallet) {
 
 	b := Block{
 		Height:       0,
+		Round:        0,
 		Transactions: []*Transaction{&valTx, &balanceTx},
 	}
 	val := Validator{

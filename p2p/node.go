@@ -16,6 +16,7 @@ import (
 	libp2pnet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/libp2p/go-libp2p/p2p/connmgr"
 	discovery_routing "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
@@ -63,6 +64,15 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		log.Fatal().Err(err).Msg("помилка завантаження ідентифікатора")
 	}
 
+	cm, err := connmgr.NewConnManager(
+		100, // Lowwater
+		400, // Highwater,
+		connmgr.WithGracePeriod(time.Minute),
+	)
+	if err != nil {
+		return Node{}, err
+	}
+
 	node, err := libp2p.New(
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			var err error
@@ -75,6 +85,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 
 		libp2p.ListenAddrStrings("/ip6/::/tcp/4003", "/ip4/0.0.0.0/tcp/4003"),
 		libp2p.Identity(priv),
+		libp2p.ConnectionManager(cm),
 		libp2p.NATPortMap(),
 		libp2p.EnableAutoNATv2(),
 		libp2p.EnableRelay(),
@@ -109,6 +120,12 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		log.Info().Str("address", p.String()).Str("peer_id", node.ID().String()).Msg("p2p node address")
 	}
 
+	lastBlock, err := bs.GetLastBlock()
+	lastBlockTime := time.Now()
+	if err == nil {
+		lastBlockTime = time.UnixMilli(lastBlock.Timestamp)
+	}
+
 	return Node{
 		host:          node,
 		ctx:           ctx,
@@ -121,6 +138,7 @@ func NewNode(ctx context.Context, mempool *chain.Mempool, bs *database.BlockStor
 		nextProposer:  chain.Validator{},
 		vote:          make(chan chain.Vote, 100),
 		messagesQueue: make(chan Message, 100),
+		lastBlockTime: lastBlockTime,
 	}, nil
 }
 

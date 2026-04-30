@@ -33,3 +33,6 @@ go.work.sum
 DataBase/*
 core
 .node.key
+
+.gemini/
+gha-creds-*.json

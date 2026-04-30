@@ -29,6 +29,14 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 }
 
 func (n *Node) createNewBlock() (chain.Block, error) {
+	// Витримуємо мінімальний час між блоками
+	timeSinceLastBlock := time.Since(n.lastBlockTime)
+	if timeSinceLastBlock < MinBlockTime {
+		sleepTime := MinBlockTime - timeSinceLastBlock
+		log.Debug().Dur("sleep", sleepTime).Msg("затримка перед створенням наступного блоку")
+		time.Sleep(sleepTime)
+	}
+
 	lastBlock, err := n.bs.GetLastBlock()
 	if err != nil {
 		return chain.Block{}, fmt.Errorf("помилка отримання останнього блоку: %w", err)
@@ -37,7 +45,7 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 	expectedHeight := lastBlock.Height + 1
 	expectedRound := n.currentRound
 
-	log.Info().Uint32("height", expectedHeight).Uint32("round", expectedRound).Msg("очікування транзакцій для нового блоку")
+	log.Info().Uint32("height", expectedHeight).Uint32("round", expectedRound).Msg("початок створення блоку")
 
 	var txsToInclude []*chain.Transaction
 	for {
@@ -54,9 +62,12 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 			n.mempool.ClearMempool(toDrop)
 		}
 
-		if len(txsToInclude) > 0 {
+		// Якщо порожні блоки дозволені АБО у нас є хоча б одна транзакція — виходимо з циклу
+		if AllowEmptyBlocks || len(txsToInclude) > 0 {
 			break
 		}
+
+		// Якщо транзакцій немає і порожні блоки заборонені — чекаємо
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -82,6 +93,7 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 		return chain.Block{}, fmt.Errorf("помилка генерації хешу блоку: %w", err)
 	}
 
+	n.lastBlockTime = time.Now() // Оновлюємо час останнього блоку
 	return block, nil
 }
 

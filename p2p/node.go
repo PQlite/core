@@ -37,6 +37,7 @@ type Node struct {
 	messagesQueue chan Message
 	syncing       atomic.Bool
 	isProposing   atomic.Bool
+	lastBlockTime time.Time
 }
 
 // mdnsNotifee підключається до піра щойно він знайдений через mDNS у локальній мережі.

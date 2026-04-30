@@ -62,6 +62,10 @@ func (t *Transaction) Verify() error {
 	var pubKey []byte
 	if bytes.Equal(t.From, []byte("reward")) || bytes.Equal(t.From, []byte("stake")) {
 		pubKey = t.To
+	} else if bytes.Equal(t.To, []byte("fine")) {
+		// Штрафні транзакції не перевіряються за підписом відправника тут,
+		// бо їх створює proposer блоку. Валідація відбувається на рівні блоку.
+		return nil
 	} else {
 		pubKey = t.From
 	}

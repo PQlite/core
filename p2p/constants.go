@@ -10,6 +10,7 @@ const (
 	// wallets
 	STAKE        = "stake"
 	REWARDWALLET = "reward"
+	FINEWALLET   = "fine"
 	REWARD       = 1 * chain.Precision
 
 	// consensus config

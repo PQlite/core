@@ -86,6 +86,10 @@ func (n *Node) createNewBlock() (chain.Block, error) {
 		return chain.Block{}, err
 	}
 
+	if err = n.addPenaltyTxs(&block); err != nil {
+		return chain.Block{}, err
+	}
+
 	if err = block.Sign(n.keys.Priv); err != nil {
 		return chain.Block{}, fmt.Errorf("помилка підпису блоку: %w", err)
 	}
@@ -116,12 +120,12 @@ func (n *Node) addRewardTx(b *chain.Block) error {
 	return nil
 }
 
-func (n *Node) applyPenalties(block *chain.Block) error {
-	if block.Round == 0 || block.Height == 0 {
+func (n *Node) addPenaltyTxs(b *chain.Block) error {
+	if b.Round == 0 {
 		return nil
 	}
 
-	lastBlock, err := n.bs.GetBlock(block.Height - 1)
+	lastBlock, err := n.bs.GetBlock(b.Height - 1)
 	if err != nil {
 		return fmt.Errorf("помилка отримання попереднього блоку для штрафів: %w", err)
 	}
@@ -131,9 +135,14 @@ func (n *Node) applyPenalties(block *chain.Block) error {
 		return fmt.Errorf("помилка отримання списку валідаторів для штрафів: %w", err)
 	}
 
-	for r := uint32(0); r < block.Round; r++ {
+	for r := uint32(0); r < b.Round; r++ {
 		missedProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, r)
 		if err != nil {
+			continue
+		}
+
+		// Якщо нода пропустила раунд, але зробила блок у наступному — не штрафуємо її (вимога п.1)
+		if bytes.Equal(missedProposer.Address, b.Proposer) {
 			continue
 		}
 
@@ -143,20 +152,45 @@ func (n *Node) applyPenalties(block *chain.Block) error {
 			penalty = 1
 		}
 
-		log.Warn().
-			Hex("proposer", missedProposer.Address).
-			Uint32("height", block.Height).
-			Uint32("round", r).
-			Int64("penalty", penalty).
-			Msg("штраф валідатора за пропуск блоку")
-
-		missedProposer.Amount -= penalty
-		if missedProposer.Amount < 0 {
-			missedProposer.Amount = 0
+		if penalty > 0 {
+			tx := chain.Transaction{
+				From:      missedProposer.Address,
+				To:        []byte(FINEWALLET),
+				Amount:    penalty,
+				Fee:       0,
+				Timestamp: time.Now().UnixMilli(),
+				Nonce:     0, // Системні транзакції можуть мати 0 або спеціальний nonce
+			}
+			// Підписуємо ключем нашої ноди, бо це ми створюємо блок (хоча для fine ми в Verify зробили виняток)
+			if err := tx.Sign(n.keys.Priv); err != nil {
+				return fmt.Errorf("помилка підпису penalty транзакції: %w", err)
+			}
+			b.Transactions = append(b.Transactions, &tx)
 		}
+	}
+	return nil
+}
 
-		if err := n.bs.AddValidator(missedProposer); err != nil {
-			return fmt.Errorf("помилка оновлення валідатора після штрафу: %w", err)
+func (n *Node) applyPenalties(block *chain.Block) error {
+	for _, tx := range block.Transactions {
+		if bytes.Equal(tx.To, []byte(FINEWALLET)) {
+			validator, _ := n.bs.GetValidator(tx.From)
+			if validator != nil {
+				log.Warn().
+					Hex("proposer", validator.Address).
+					Uint32("height", block.Height).
+					Int64("penalty", tx.Amount).
+					Msg("застосування штрафу з транзакції блоку")
+
+				validator.Amount -= tx.Amount
+				if validator.Amount < 0 {
+					validator.Amount = 0
+				}
+
+				if err := n.bs.AddValidator(validator); err != nil {
+					return fmt.Errorf("помилка оновлення валідатора після штрафу: %w", err)
+				}
+			}
 		}
 	}
 	return nil
@@ -220,6 +254,76 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 		return err
 	}
 
+	if err := n.verifyPenaltyTxs(block); err != nil {
+		log.Error().Err(err).Msg("невідповідність штрафних транзакцій у блоці")
+		return err
+	}
+
+	return nil
+}
+
+func (n *Node) verifyPenaltyTxs(b *chain.Block) error {
+	if b.Round == 0 {
+		// Якщо раунд 0, штрафів бути не повинно
+		for _, tx := range b.Transactions {
+			if bytes.Equal(tx.To, []byte(FINEWALLET)) {
+				return fmt.Errorf("штрафна транзакція в блоці раунду 0")
+			}
+		}
+		return nil
+	}
+
+	lastBlock, err := n.bs.GetBlock(b.Height - 1)
+	if err != nil {
+		return fmt.Errorf("помилка отримання попереднього блоку: %w", err)
+	}
+
+	validators, err := n.bs.GetValidatorsList()
+	if err != nil {
+		return fmt.Errorf("помилка отримання списку валідаторів: %w", err)
+	}
+
+	// Створюємо карту очікуваних штрафів
+	expectedFines := make(map[string]int64)
+	for r := uint32(0); r < b.Round; r++ {
+		missedProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, r)
+		if err != nil {
+			continue
+		}
+
+		// Якщо нода пропустила раунд, але зробила блок у наступному — не штрафуємо її (вимога п.1)
+		if bytes.Equal(missedProposer.Address, b.Proposer) {
+			continue
+		}
+
+		penalty := missedProposer.Amount / 1000
+		if penalty == 0 && missedProposer.Amount > 0 {
+			penalty = 1
+		}
+		if penalty > 0 {
+			expectedFines[string(missedProposer.Address)] += penalty
+		}
+	}
+
+	// Створюємо карту отриманих штрафів у блоці
+	actualFines := make(map[string]int64)
+	for _, tx := range b.Transactions {
+		if bytes.Equal(tx.To, []byte(FINEWALLET)) {
+			actualFines[string(tx.From)] += tx.Amount
+		}
+	}
+
+	// Порівнюємо
+	if len(expectedFines) != len(actualFines) {
+		return fmt.Errorf("невідповідність кількості штрафованих адрес: очікувано %d, отримано %d", len(expectedFines), len(actualFines))
+	}
+
+	for addr, amount := range expectedFines {
+		if actualFines[addr] != amount {
+			return fmt.Errorf("невірна сума штрафу для %x: очікувано %d, отримано %d", addr, amount, actualFines[addr])
+		}
+	}
+
 	return nil
 }
 
@@ -235,7 +339,7 @@ func (n *Node) setNextProposer() error {
 }
 
 func (n *Node) isSystemAddr(addr []byte) bool {
-	return bytes.Equal(addr, []byte(REWARDWALLET)) || bytes.Equal(addr, []byte(STAKE))
+	return bytes.Equal(addr, []byte(REWARDWALLET)) || bytes.Equal(addr, []byte(STAKE)) || bytes.Equal(addr, []byte(FINEWALLET))
 }
 
 func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transaction, []*chain.Transaction) {
@@ -295,7 +399,7 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 	balances := make(map[string]int64)
 
 	for _, tx := range txs {
-		if n.isSystemAddr(tx.From) {
+		if n.isSystemAddr(tx.From) || bytes.Equal(tx.To, []byte(FINEWALLET)) {
 			continue
 		}
 
@@ -340,6 +444,15 @@ func (n *Node) updateBalancesNonces(b *chain.Block) error {
 			}
 			continue
 		}
+
+		// Штрафні транзакції не зменшують баланс гаманця, бо вони зменшують стейк у applyPenalties
+		if bytes.Equal(tx.To, []byte(FINEWALLET)) {
+			walletTo, _ := n.bs.GetWalletByAddress(tx.To)
+			walletTo.Balance += tx.Amount
+			n.bs.UpdateBalance(&walletTo)
+			continue
+		}
+
 		walletFrom, err := n.bs.GetWalletByAddress(tx.From)
 		if err != nil {
 			return err

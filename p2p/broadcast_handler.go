@@ -276,6 +276,13 @@ func (n *Node) handleMsgCommit(data []byte) {
 		return
 	}
 
+	// Перевіряємо, чи блок іде точно наступним
+	lastBlock, err := n.bs.GetLastBlock()
+	if err == nil && commit.Block.Height != lastBlock.Height+1 {
+		log.Error().Uint32("last_height", lastBlock.Height).Uint32("block_height", commit.Block.Height).Msg("спроба додати блок не за порядком")
+		return
+	}
+
 	if err := n.bs.SaveBlock(&commit.Block); err != nil {
 		log.Error().Err(err).Msg("помилка збереження блоку")
 		return

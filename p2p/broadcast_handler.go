@@ -134,10 +134,15 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 	}
 
 	if err := n.fullBlockVerefication(&block); err != nil {
-		// Якщо блок уже оброблений або ми просто синхронізуємося — не шлемо reject,
-		// щоб не спамити мережу і не провокувати стрибки раундів.
-		if strings.Contains(err.Error(), "оброблений") || strings.Contains(err.Error(), "висота") {
-			log.Debug().Err(err).Msg("блок ігнорується без reject")
+		// Якщо блок уже оброблений — просто ігноруємо, це не помилка
+		if strings.Contains(err.Error(), "оброблений") {
+			log.Debug().Uint32("height", block.Height).Msg("отримано дублікат блоку, ігноруємо")
+			return
+		}
+		
+		// Якщо висота занадто велика — можливо ми відстали
+		if strings.Contains(err.Error(), "висота") {
+			log.Debug().Err(err).Msg("блок з іншою висотою, ігноруємо (запущено синхронізацію)")
 			return
 		}
 

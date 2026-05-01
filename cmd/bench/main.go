@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -113,6 +114,9 @@ func main() {
 	var errors atomic.Int64
 	workerDone := make(chan struct{}, *workers)
 
+	var sentHashes []string
+	var hashMu sync.Mutex
+
 	for w := 0; w < *workers; w++ {
 		numTasks := tasksPerWorker
 		if w < *count%*workers {
@@ -150,6 +154,12 @@ func main() {
 				resp, err := client.Post(*node+"/tx", "application/json", bytes.NewReader(data))
 				if err == nil && resp.StatusCode == 200 {
 					sent.Add(1)
+					var res struct { Hash string `json:"hash"` }
+					if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && res.Hash != "" {
+						hashMu.Lock()
+						sentHashes = append(sentHashes, res.Hash)
+						hashMu.Unlock()
+					}
 				} else {
 					errors.Add(1)
 				}
@@ -176,36 +186,36 @@ func main() {
 	waitStart := time.Now()
 	deadline := waitStart.Add(*timeout)
 	
-	lastHeight := fetchWallet(*node, mainKF.Pub).Nonce // приблизно
 	confirmedCount := int64(0)
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	for time.Now().Before(deadline) && confirmedCount < sent.Load() {
+	confirmedMap := make(map[string]bool)
+
+	for time.Now().Before(deadline) && confirmedCount < int64(len(sentHashes)) {
 		<-ticker.C
-		blocks := fetchBlocks(*node)
 		
-		newConfirmed := int64(0)
-		for _, b := range blocks {
-			if b.Height <= lastHeight {
+		for _, h := range sentHashes {
+			if confirmedMap[h] {
 				continue
 			}
-			for _, tx := range b.Transactions {
-				// Перевіряємо чи це транзакція від одного з наших воркерів
-				for _, wk := range workerKeys {
-					if bytes.Equal(tx.From, wk.Pub) {
-						newConfirmed++
-						break
-					}
+			
+			resp, err := http.Get(*node + "/tx/" + h)
+			if err != nil {
+				continue
+			}
+			
+			var res struct { Status string `json:"status"` }
+			if err := json.NewDecoder(resp.Body).Decode(&res); err == nil {
+				if res.Status == "confirmed" {
+					confirmedMap[h] = true
+					confirmedCount++
 				}
 			}
-			if b.Height > lastHeight {
-				lastHeight = b.Height
-			}
+			resp.Body.Close()
 		}
 		
-		if newConfirmed > 0 {
-			confirmedCount += newConfirmed
+		if confirmedCount > 0 {
 			fmt.Printf("  Підтверджено: %d/%d (%.1fs від старту)\n", 
 				confirmedCount, sent.Load(), time.Since(submitStart).Seconds())
 		}

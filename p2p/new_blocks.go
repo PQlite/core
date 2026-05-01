@@ -215,6 +215,15 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 		return fmt.Errorf("невірна висота блоку")
 	}
 
+	// Перевірка timestamp блоку
+	if block.Timestamp <= lastLocalBlock.Timestamp {
+		return fmt.Errorf("блок має застарілий timestamp (%d <= %d)", block.Timestamp, lastLocalBlock.Timestamp)
+	}
+	// Дозволяємо невелике відхилення в майбутнє (наприклад, 10 секунд) для синхронізації годинників
+	if block.Timestamp > time.Now().Add(10*time.Second).UnixMilli() {
+		return fmt.Errorf("блок має timestamp з майбутнього (%d)", block.Timestamp)
+	}
+
 	// ВАЖЛИВО: Спочатку перевіряємо підпис самого блоку та його структуру
 	if err := block.Verify(); err != nil {
 		log.Error().Err(err).Hex("proposer", block.Proposer).Msg("валідація підпису блоку не пройшла")

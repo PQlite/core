@@ -4,6 +4,7 @@ package chain
 
 import (
 	"bytes"
+	"crypto/sha3"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -47,6 +48,12 @@ func (t *Transaction) Sign(priv []byte) error {
 
 	t.Signature = sign
 	return nil
+}
+
+func (t *Transaction) Hash() []byte {
+	data, _ := json.Marshal(t)
+	hash := sha3.Sum224(data)
+	return hash[:]
 }
 
 // Verify якщо все ок, і транзакція пройшла перевірку, буде повернуто nil, в іншому випадку err з описом

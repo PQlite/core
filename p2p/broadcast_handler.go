@@ -101,7 +101,18 @@ func (n *Node) handleMsgNewTransaction(data []byte) {
 		log.Error().Err(err).Msg("помилка розпаковки транзакції")
 		return
 	}
-	log.Info().Int64("latency", time.Now().UnixMilli()-tx.Timestamp).Msg("отримано транзакцію")
+	now := time.Now().UnixMilli()
+	// Перевірка timestamp транзакції
+	if tx.Timestamp > now+60000 { // +1 хвилина
+		log.Warn().Msg("відхилено: транзакція з майбутнього")
+		return
+	}
+	if tx.Timestamp < now-86400000 { // -24 години
+		log.Warn().Msg("відхилено: транзакція занадто стара")
+		return
+	}
+
+	log.Info().Int64("latency", now-tx.Timestamp).Msg("отримано транзакцію")
 	
 	// Захист від Mempool DOS: перевіряємо чи Nonce не занадто далеко в майбутньому
 	wallet, _ := n.bs.GetWalletByAddress(tx.From)

@@ -201,6 +201,17 @@ func (n *Node) handleTxCh() {
 		case tx := <-n.TxCh:
 			log.Info().Hex("tx_from", tx.From).Msg("отримано нову транзакцію з API")
 
+			// Валідація timestamp
+			now := time.Now().UnixMilli()
+			if tx.Timestamp > now+60000 {
+				log.Warn().Msg("відхилено API: транзакція з майбутнього")
+				continue
+			}
+			if tx.Timestamp < now-86400000 {
+				log.Warn().Msg("відхилено API: транзакція занадто стара")
+				continue
+			}
+
 			// Захист від DOS
 			wallet, _ := n.bs.GetWalletByAddress(tx.From)
 			if tx.Nonce > wallet.Nonce+10 {

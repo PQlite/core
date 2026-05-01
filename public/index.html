@@ -189,6 +189,10 @@
                             <p class="text-gray-500 uppercase text-[10px] font-bold mb-1">Timestamp (ISO 8601)</p>
                             <p class="text-white text-xs" x-text="fullDate(selectedBlock?.Timestamp)"></p>
                         </div>
+                        <div class="bg-gray-900/50 p-4 rounded-xl border border-gray-700 md:col-span-2 cursor-pointer group" @click="copy(selectedBlock?.Proposer)">
+                            <p class="text-gray-500 uppercase text-[10px] font-bold mb-1">Proposer <span class="text-blue-500 opacity-0 group-hover:opacity-100 ml-2">Click to copy</span></p>
+                            <p class="font-mono text-yellow-500 break-all text-xs" x-text="displayAddr(selectedBlock?.Proposer)"></p>
+                        </div>
                     </div>
                     <h4 class="font-bold mb-4 uppercase text-[10px] text-gray-500 tracking-widest">Transactions (<span x-text="selectedBlock?.Transactions?.length || 0"></span>)</h4>
                     <div class="space-y-2">
@@ -297,22 +301,42 @@
                     ws.onmessage = (event) => {
                         const data = JSON.parse(event.data);
                         
-                        // Якщо це блок
-                        if (data.Height !== undefined) {
-                            const newBlock = this.formatBlock(data);
-                            if (!this.blocks.find(b => b.Hash === newBlock.Hash)) {
-                                this.blocks.push(newBlock);
-                                this.stats.lastHeight = newBlock.Height;
-                                this.toast.message = 'New block #' + newBlock.Height;
+                        // Якщо це повний статус
+                        if (data.stats) {
+                            const oldHeight = this.stats.lastHeight;
+                            this.stats = data.stats;
+                            
+                            // Конвертуємо адресу proposer в hex для коректного відображення
+                            if (this.stats.nextProposer) {
+                                this.stats.nextProposer = this.toHex(this.getVal(this.stats.nextProposer, 'address'));
+                            }
+
+                            this.validators = (data.validators || []).map(v => {
+                                const addr = this.toHex(this.getVal(v, 'address'));
+                                return {
+                                    address: addr,
+                                    stake: this.getVal(v, 'stake') || 0,
+                                    balance: this.getVal(v, 'balance') || 0
+                                };
+                            }).sort((a,b) => b.stake - a.stake);
+
+                            this.blocks = data.blocks.map(b => this.formatBlock(b));
+                            
+                            // Оновлюємо нещодавні транзакції
+                            let allTxs = [];
+                            this.blocks.slice().reverse().forEach(b => {
+                                (b.Transactions || []).forEach(tx => {
+                                    tx.blockHeight = b.Height;
+                                    allTxs.push(tx);
+                                });
+                            });
+                            this.recentTxs = allTxs.slice(0, 20);
+
+                            if (this.stats.lastHeight > oldHeight && oldHeight > 0) {
+                                this.toast.message = 'New block #' + this.stats.lastHeight;
                                 this.toast.show = true;
                                 setTimeout(() => this.toast.show = false, 2000);
                             }
-                        } 
-                        // Якщо це повний статус (наприклад, при підключенні)
-                        else if (data.stats) {
-                            this.stats = data.stats;
-                            this.validators = data.validators;
-                            this.blocks = data.blocks.map(b => this.formatBlock(b));
                         }
                     };
                 },
@@ -386,11 +410,13 @@
                 formatBlock(b) {
                     const hash = this.getVal(b, 'hash');
                     const prev = this.getVal(b, 'prevHash');
+                    const proposer = this.getVal(b, 'proposer');
                     const txs = this.getVal(b, 'transactions') || [];
                     return { 
                         ...b, 
                         Hash: this.toHex(hash), 
                         PrevHash: this.toHex(prev),
+                        Proposer: this.toHex(proposer),
                         Transactions: txs.map(tx => ({
                             ...tx,
                             from: this.toHex(this.getVal(tx, 'from')),

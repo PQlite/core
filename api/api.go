@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -119,6 +120,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/chainSize", s.handleGetChainSize)
 	s.app.Get("/nextProposer", s.handleGetNextProposer)
 	s.app.Get("/currentRound", s.handleGetCurrentRound)
+	s.app.Get("/tx/:hash", s.handleGetTxStatus)
 	s.app.Post("/tx", s.handlePostTx)
 
 	// щоб сервер не відповідав усіляким підораскам
@@ -193,7 +195,38 @@ func (s *Server) handlePostTx(c *fiber.Ctx) error {
 
 	return c.Status(200).JSON(fiber.Map{
 		"status": "ok",
-		"error":  "",
+		"hash":   hex.EncodeToString(tx.Hash()),
+	})
+}
+
+func (s *Server) handleGetTxStatus(c *fiber.Ctx) error {
+	hashHex := c.Params("hash")
+	hash, err := hex.DecodeString(hashHex)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid hash"})
+	}
+
+	// Перевірка в блоках
+	height, err := s.bs.GetTxBlock(hash)
+	if err == nil {
+		return c.JSON(fiber.Map{
+			"status": "confirmed",
+			"height": height,
+		})
+	}
+
+	// Перевірка в mempool
+	txs := s.mempool.GetTransactions()
+	for _, tx := range txs {
+		if bytes.Equal(tx.Hash(), hash) {
+			return c.JSON(fiber.Map{
+				"status": "pending",
+			})
+		}
+	}
+
+	return c.Status(404).JSON(fiber.Map{
+		"status": "not_found",
 	})
 }
 
@@ -293,11 +326,10 @@ func (s *Server) runWebSocketPoller() {
 		lastBlock, err := s.bs.GetLastBlock()
 		if err == nil && lastBlock.Height > lastHeight {
 			lastHeight = lastBlock.Height
-			data, _ := json.Marshal(lastBlock)
 
 			s.mu.Lock()
 			for client := range s.clients {
-				client.WriteMessage(websocket.TextMessage, data)
+				s.sendFullState(client)
 			}
 			s.mu.Unlock()
 		}

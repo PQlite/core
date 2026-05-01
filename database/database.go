@@ -3,6 +3,7 @@
 package database
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -69,14 +70,48 @@ func (bs *BlockStorage) SaveBlock(block *chain.Block) error {
 		return err
 	}
 
+	// Index transactions
+	for _, tx := range block.Transactions {
+		txKey := "tx:" + hex.EncodeToString(tx.Hash())
+		err = txn.Set([]byte(txKey), []byte(strconv.FormatUint(uint64(block.Height), 10)))
+		if err != nil {
+			return err
+		}
+	}
+
 	if err = txn.Commit(); err != nil {
 		return err
 	}
 	return bs.db.Sync()
 }
 
-func (bs *BlockStorage) GetBlock(height uint32) (*chain.Block, error) {
-	var block chain.Block
+func (bs *BlockStorage) GetTxBlock(txHash []byte) (uint32, error) {
+	key := "tx:" + hex.EncodeToString(txHash)
+	var height uint32
+
+	err := bs.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(key))
+		if err != nil {
+			return err
+		}
+
+		return item.Value(func(val []byte) error {
+			h, err := strconv.ParseUint(string(val), 10, 32)
+			if err != nil {
+				return err
+			}
+			height = uint32(h)
+			return nil
+		})
+	})
+
+	if err != nil {
+		return 0, err
+	}
+	return height, nil
+}
+
+func (bs *BlockStorage) GetBlock(height uint32) (*chain.Block, error) {	var block chain.Block
 	key := fmt.Sprintf("block:%d", height)
 
 	err := bs.db.View(func(txn *badger.Txn) error {

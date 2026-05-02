@@ -7,8 +7,8 @@ import (
 )
 
 type Validator struct {
-	Address []byte
-	Amount  int64
+	Address []byte `json:"address"`
+	Amount  int64  `json:"amount"`
 }
 
 // SelectNextProposer детерміністично вибирає proposer на основі хешу блоку та номеру раунду.

@@ -345,6 +345,16 @@ func (s *Server) sendFullState(c *websocket.Conn) {
 	})
 
 	validators, _ := s.bs.GetValidatorsList()
+	var valList []fiber.Map
+	for _, v := range *validators {
+		wallet, _ := s.bs.GetWalletByAddress(v.Address)
+		valList = append(valList, fiber.Map{
+			"address": v.Address,
+			"stake":   v.Amount,
+			"balance": wallet.Balance,
+		})
+	}
+
 	lastBlock, _ := s.bs.GetLastBlock()
 	mempool := s.mempool.GetTransactions()
 	size, _ := s.bs.GetSize()
@@ -358,7 +368,7 @@ func (s *Server) sendFullState(c *websocket.Conn) {
 			"sizeMb":        float64(size) / (1024 * 1024),
 		},
 		"blocks":     blocks,
-		"validators": validators,
+		"validators": valList,
 	}
 
 	data, _ := json.Marshal(state)

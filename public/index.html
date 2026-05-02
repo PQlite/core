@@ -315,8 +315,8 @@
                                 const addr = this.toHex(this.getVal(v, 'address'));
                                 return {
                                     address: addr,
-                                    stake: this.getVal(v, 'stake') || 0,
-                                    balance: this.getVal(v, 'balance') || 0
+                                    stake: v.stake ?? v.Stake ?? v.amount ?? v.Amount ?? 0,
+                                    balance: v.balance ?? v.Balance ?? 0
                                 };
                             }).sort((a,b) => b.stake - a.stake);
 
@@ -386,8 +386,8 @@
                                 const addr = this.toHex(this.getVal(v, 'address'));
                                 return {
                                     address: addr,
-                                    stake: this.getVal(v, 'stake') || 0,
-                                    balance: this.getVal(v, 'balance') || 0
+                                    stake: v.stake ?? v.Stake ?? v.amount ?? v.Amount ?? 0,
+                                    balance: v.balance ?? v.Balance ?? 0
                                 };
                             }).sort((a,b) => b.stake - a.stake);
                         }

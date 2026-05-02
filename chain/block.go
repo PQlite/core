@@ -16,14 +16,14 @@ import (
 )
 
 type Block struct {
-	Height       uint32         // Номер блоку
-	Round        uint32         // Раунд в якому був створений блок
-	Timestamp    int64          // UNIX час
-	PrevHash     []byte         // Хеш попереднього блоку
-	Hash         []byte         // Хеш цього блоку (розраховується по іншим полям)
-	Proposer     []byte         // Адреса або публічний ключ того, хто створив блок
-	Transactions []*Transaction // Список транзакцій
-	Signature    []byte         // Підпис Proposer'а на блоку
+	Height       uint32         `json:"height"`       // Номер блоку
+	Round        uint32         `json:"round"`        // Раунд в якому був створений блок
+	Timestamp    int64          `json:"timestamp"`    // UNIX час
+	PrevHash     []byte         `json:"prevHash"`     // Хеш попереднього блоку
+	Hash         []byte         `json:"hash"`         // Хеш цього блоку (розраховується по іншим полям)
+	Proposer     []byte         `json:"proposer"`     // Адреса або публічний ключ того, хто створив блок
+	Transactions []*Transaction `json:"transactions"` // Список транзакцій
+	Signature    []byte         `json:"signature"`    // Підпис Proposer'а на блоку
 }
 
 // sortTransactions сортує транзакції в блоці детерміністично.

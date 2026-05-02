@@ -157,18 +157,11 @@ func CreateGenesisBlock() (Block, Validator, Wallet) {
 		Timestamp: 0,
 		Nonce:     1,
 	}
-	balanceTx := Transaction{
-		From:      []byte("reward"),
-		To:        pubBytes,
-		Amount:    1000000 * Precision,
-		Timestamp: 0,
-		Nonce:     2,
-	}
 
 	b := Block{
 		Height:       0,
 		Round:        0,
-		Transactions: []*Transaction{&valTx, &balanceTx},
+		Transactions: []*Transaction{&valTx},
 	}
 	val := Validator{
 		Address: pubBytes,
@@ -176,7 +169,7 @@ func CreateGenesisBlock() (Block, Validator, Wallet) {
 	}
 	wallet := Wallet{
 		Address: pubBytes,
-		Balance: 1000000 * Precision,
+		Balance: 0,
 		Nonce:   2,
 	}
 	return b, val, wallet

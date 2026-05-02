@@ -5,14 +5,16 @@ import (
 
 	"github.com/PQlite/core/chain"
 	"github.com/dgraph-io/badger/v4"
+	"github.com/rs/zerolog/log"
 )
 
 var walletPrefix = []byte("wallet")
 
 func (bs *BlockStorage) GetWalletByAddress(addr []byte) (chain.Wallet, error) {
-	// TODO: треба щоб повертала структура wallet, якщо є помилка "Key not found"
 	var wallet chain.Wallet
-	key := append(walletPrefix, addr...)
+	key := make([]byte, len(walletPrefix)+len(addr))
+	copy(key, walletPrefix)
+	copy(key[len(walletPrefix):], addr)
 
 	if err := bs.db.View(func(txn *badger.Txn) error {
 		data, err := txn.Get(key)
@@ -37,22 +39,6 @@ func (bs *BlockStorage) GetWalletByAddress(addr []byte) (chain.Wallet, error) {
 	return wallet, nil
 }
 
-func (bs *BlockStorage) UpdateBalance(wallet *chain.Wallet) error {
-	key := append(walletPrefix, wallet.Address...)
-	data, err := json.Marshal(wallet)
-	if err != nil {
-		return err
-	}
-
-	if err := bs.db.Update(func(txn *badger.Txn) error {
-		return txn.Set(key, data)
-	}); err != nil {
-		return err
-	}
-
-	return bs.db.Sync()
-}
-
 func (bs *BlockStorage) GetAllWallets() ([]chain.Wallet, error) {
 	var wallets []chain.Wallet
 	err := bs.db.View(func(txn *badger.Txn) error {
@@ -61,7 +47,7 @@ func (bs *BlockStorage) GetAllWallets() ([]chain.Wallet, error) {
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		for it.Rewind(); it.Valid(); it.Next() {
+		for it.Seek(walletPrefix); it.ValidForPrefix(walletPrefix); it.Next() {
 			item := it.Item()
 			err := item.Value(func(val []byte) error {
 				var wallet chain.Wallet
@@ -75,7 +61,27 @@ func (bs *BlockStorage) GetAllWallets() ([]chain.Wallet, error) {
 				return err
 			}
 		}
+		log.Debug().Int("count", len(wallets)).Msg("GetAllWallets: знайдено гаманців")
 		return nil
 	})
 	return wallets, err
+}
+
+func (bs *BlockStorage) UpdateBalance(wallet *chain.Wallet) error {
+	key := make([]byte, len(walletPrefix)+len(wallet.Address))
+	copy(key, walletPrefix)
+	copy(key[len(walletPrefix):], wallet.Address)
+
+	data, err := json.Marshal(wallet)
+	if err != nil {
+		return err
+	}
+
+	if err := bs.db.Update(func(txn *badger.Txn) error {
+		return txn.Set(key, data)
+	}); err != nil {
+		return err
+	}
+
+	return bs.db.Sync()
 }

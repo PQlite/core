@@ -321,15 +321,7 @@ func (n *Node) handleMsgCommit(data []byte) {
 	}
 
 	// Новий блок — скидаємо раунд і вибираємо наступного proposer-а
-	n.currentRound = 0
-	if err := n.setNextProposer(); err != nil {
-		log.Error().Err(err).Msg("помилка вибору наступного proposer")
-		return
-	}
-
-	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
-		go n.tryProposeBlock()
-	}
+	n.ResetRound()
 }
 
 func (n *Node) tryProposeBlock() {

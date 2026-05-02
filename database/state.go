@@ -52,3 +52,30 @@ func (bs *BlockStorage) UpdateBalance(wallet *chain.Wallet) error {
 
 	return bs.db.Sync()
 }
+
+func (bs *BlockStorage) GetAllWallets() ([]chain.Wallet, error) {
+	var wallets []chain.Wallet
+	err := bs.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = walletPrefix
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			err := item.Value(func(val []byte) error {
+				var wallet chain.Wallet
+				if err := json.Unmarshal(val, &wallet); err != nil {
+					return err
+				}
+				wallets = append(wallets, wallet)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return wallets, err
+}

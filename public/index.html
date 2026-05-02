@@ -71,7 +71,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
             <!-- Blocks -->
             <div class="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden shadow-xl">
                 <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-750">
@@ -162,6 +162,31 @@
                                         <div class="text-blue-400 font-bold text-[11px]" x-text="formatAmount(val.stake) + ' S'"></div>
                                         <div class="text-gray-500 text-[10px]" x-text="formatAmount(val.balance) + ' B'"></div>
                                     </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Wallets -->
+            <div class="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden shadow-xl">
+                <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-750">
+                    <h2 class="text-xl font-bold">Wallets</h2>
+                    <span class="text-xs bg-gray-700 px-2 py-1 rounded text-gray-400" x-text="wallets.length"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-900/50 text-gray-400 text-[10px] uppercase">
+                            <tr><th class="px-4 py-3">Address</th><th class="px-4 py-3 text-right">Balance</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700">
+                            <template x-for="(w, idx) in wallets.slice().sort((a,b) => (b.balance || b.Balance) - (a.balance || a.Balance))" :key="w.address || idx">
+                                <tr class="hover:bg-gray-700/50 cursor-pointer" @click="searchAddr(toHex(getVal(w, 'address')))">
+                                    <td class="px-4 py-4">
+                                        <span class="font-mono text-xs text-gray-300 copy-hint" @click.stop="copy(toHex(getVal(w, 'address')))" x-text="truncateHash(toHex(getVal(w, 'address')))"></span>
+                                    </td>
+                                    <td class="px-4 py-4 text-right text-blue-400 font-bold text-xs" x-text="formatAmount(getVal(w, 'balance'))"></td>
                                 </tr>
                             </template>
                         </tbody>
@@ -287,7 +312,7 @@
     <script>
         function explorer() {
             return {
-                blocks: [], recentTxs: [], validators: [], blocksLimit: 10, 
+                blocks: [], recentTxs: [], validators: [], wallets: [], blocksLimit: 10, 
                 activeFilters: ['TRANSFER', 'REWARD', 'STAKE', 'UNSTAKE', 'PENALTY'],
                 stats: { lastHeight: 0, mempoolSize: 0, currentRound: 0, nextProposer: '', sizeMb: 0 },
                 searchQuery: '', selectedBlock: null, selectedTx: null, selectedAddr: null, selectedAddrHash: '',
@@ -320,6 +345,7 @@
                                 };
                             }).sort((a,b) => b.stake - a.stake);
 
+                            this.wallets = data.wallets || [];
                             this.blocks = (data.blocks || []).map(b => this.formatBlock(b));
                             
                             // Оновлюємо нещодавні транзакції
@@ -352,9 +378,10 @@
 
                 async fetchData() {
                     try {
-                        const [bRes, lRes, mRes, pRes, rRes, vRes, sRes] = await Promise.all([
+                        const [bRes, lRes, mRes, pRes, rRes, vRes, sRes, wRes] = await Promise.all([
                             fetch('/blocks'), fetch('/lastBlock'), fetch('/txs'),
-                            fetch('/nextProposer'), fetch('/currentRound'), fetch('/validators'), fetch('/chainSize')
+                            fetch('/nextProposer'), fetch('/currentRound'), fetch('/validators'), fetch('/chainSize'),
+                            fetch('/wallets')
                         ]);
                         
                         if (bRes.ok) {
@@ -390,6 +417,10 @@
                                     balance: v.balance ?? v.Balance ?? 0
                                 };
                             }).sort((a,b) => b.stake - a.stake);
+                        }
+
+                        if (wRes && wRes.ok) {
+                            this.wallets = await wRes.json();
                         }
                     } catch (e) { console.error(e); }
                 },

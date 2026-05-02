@@ -347,6 +347,22 @@ func (n *Node) setNextProposer() error {
 	return nil
 }
 
+// ResetRound скидає консенсус для нової висоти
+func (n *Node) ResetRound() {
+	n.currentRound = 0
+	if err := n.setNextProposer(); err != nil {
+		log.Error().Err(err).Msg("не вдалося оновити proposer при ResetRound")
+	}
+	
+	// Скидаємо прапорець, щоб дозволити нову пропозицію негайно (якщо попередня зависла)
+	n.isProposing.Store(false)
+
+	// Якщо ми наступний proposer — пробуємо запропонувати блок
+	if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
+		go n.tryProposeBlock()
+	}
+}
+
 func (n *Node) isSystemAddr(addr []byte) bool {
 	return bytes.Equal(addr, []byte(REWARDWALLET)) || bytes.Equal(addr, []byte(STAKE)) || bytes.Equal(addr, []byte(FINEWALLET)) || bytes.Equal(addr, []byte(UNSTAKE))
 }

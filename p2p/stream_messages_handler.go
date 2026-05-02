@@ -39,44 +39,51 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 }
 
 func (n *Node) handleStreamRequestBlock(stream network.Stream, msg *Message) {
-	var reqData chain.Block
+	var reqData RequestBlocks
 	if err := json.Unmarshal(msg.Data, &reqData); err != nil {
-		log.Error().Err(err).Msg("помилка розпаковки block з запиту на блок")
-		return
-	}
-
-	lastBlock, err := n.bs.GetLastBlock()
-	if err != nil {
-		log.Error().Err(err).Msg("помилка отримання останнього блоку")
-		return
-	}
-
-	var blockToSend *chain.Block
-	if lastBlock.Height <= reqData.Height {
-		blockToSend = lastBlock
-	} else {
-		blockToSend, err = n.bs.GetBlock(reqData.Height)
-		if err != nil {
-			log.Error().Err(err).Uint32("height", reqData.Height).Msg("помилка отримання блоку")
+		// Стара версія ноди може запитувати просто chain.Block
+		var oldReq chain.Block
+		if err := json.Unmarshal(msg.Data, &oldReq); err == nil {
+			reqData.FromHeight = oldReq.Height
+			reqData.Count = 1
+		} else {
+			log.Error().Err(err).Msg("помилка розпаковки RequestBlocks з запиту")
 			return
 		}
 	}
 
-	if err := n.writeBlockToStream(stream, blockToSend); err != nil {
-		log.Error().Err(err).Msg("помилка відправки блоку в потік")
+	if reqData.Count <= 0 {
+		reqData.Count = 1
+	}
+	if reqData.Count > 100 {
+		reqData.Count = 100 // Ліміт для batch sync
+	}
+
+	var blocks []chain.Block
+	for i := 0; i < reqData.Count; i++ {
+		block, err := n.bs.GetBlock(reqData.FromHeight + uint32(i))
+		if err != nil {
+			break
+		}
+		blocks = append(blocks, *block)
+	}
+
+	if err := n.writeBlocksToStream(stream, blocks); err != nil {
+		log.Error().Err(err).Msg("помилка відправки блоків в потік")
 	}
 }
 
-func (n *Node) writeBlockToStream(stream network.Stream, block *chain.Block) error {
-	blockBytes, err := json.Marshal(block)
+func (n *Node) writeBlocksToStream(stream network.Stream, blocks []chain.Block) error {
+	respData := ResponseBlocks{Blocks: blocks}
+	dataBytes, err := json.Marshal(respData)
 	if err != nil {
-		return fmt.Errorf("помилка серіалізації блоку: %w", err)
+		return fmt.Errorf("помилка серіалізації блоків: %w", err)
 	}
 
 	respMsg := Message{
 		Type:      MsgResponeBlock,
 		Timestamp: time.Now().UnixMilli(),
-		Data:      blockBytes,
+		Data:      dataBytes,
 		Pub:       n.keys.Pub,
 	}
 

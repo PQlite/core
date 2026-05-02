@@ -116,6 +116,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/blocks", s.handleGetAllBlocks)
 	s.app.Get("/addr/:id", s.handleGetBalance)
 	s.app.Get("/validators", s.handleGetValidators)
+	s.app.Get("/wallets", s.handleGetAllWallets)
 	s.app.Get("/lastBlock", s.handleGetLastBlock)
 	s.app.Get("/chainSize", s.handleGetChainSize)
 	s.app.Get("/nextProposer", s.handleGetNextProposer)
@@ -302,6 +303,16 @@ func (s *Server) handleGetValidators(c *fiber.Ctx) error {
 	return c.JSON(res)
 }
 
+func (s *Server) handleGetAllWallets(c *fiber.Ctx) error {
+	wallets, err := s.bs.GetAllWallets()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	return c.JSON(wallets)
+}
+
 func (s *Server) handleGetNextProposer(c *fiber.Ctx) error {
 	return c.JSON(s.node.GetNextProposer())
 }
@@ -355,6 +366,7 @@ func (s *Server) sendFullState(c *websocket.Conn) {
 		})
 	}
 
+	wallets, _ := s.bs.GetAllWallets()
 	lastBlock, _ := s.bs.GetLastBlock()
 	mempool := s.mempool.GetTransactions()
 	size, _ := s.bs.GetSize()
@@ -369,6 +381,7 @@ func (s *Server) sendFullState(c *websocket.Conn) {
 		},
 		"blocks":     blocks,
 		"validators": valList,
+		"wallets":    wallets,
 	}
 
 	data, _ := json.Marshal(state)

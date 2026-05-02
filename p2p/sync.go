@@ -1,8 +1,8 @@
 package p2p
 
 import (
-	"bytes"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -13,30 +13,24 @@ import (
 
 func (n *Node) syncBlockchain() {
 	// Гарантуємо що одночасно виконується лише одна синхронізація.
-	// Це важливо бо syncBlockchain може тригеритись з кількох місць:
-	// Start(), NotifyBundle.ConnectedF, fullBlockVerefication.
 	if !n.syncing.CompareAndSwap(false, true) {
 		return
 	}
 	defer n.syncing.Store(false)
 
-	// OPTIMIZE: зробити отримання нових блоків в batch
 	for {
 		localBlock, err := n.bs.GetLastBlock()
 		if err != nil {
 			log.Error().Err(err).Msg("помилка отримання останнього блоку при синхронізації")
 			return
 		}
-		if err := n.setNextProposer(); err != nil {
-			log.Error().Err(err).Msg("помилка вибору proposer при синхронізації")
-			return
-		}
 
-		data, err := json.Marshal(chain.Block{Height: localBlock.Height + 1})
-		if err != nil {
-			log.Error().Err(err).Msg("помилка серіалізації запиту блоку")
-			return
+		// Запитуємо batch блоків
+		req := RequestBlocks{
+			FromHeight: localBlock.Height + 1,
+			Count:      100,
 		}
+		data, _ := json.Marshal(req)
 
 		m := Message{
 			Type:      MsgRequestBlock,
@@ -45,71 +39,71 @@ func (n *Node) syncBlockchain() {
 			Pub:       n.keys.Pub,
 		}
 		if err = m.sign(n.keys.Priv); err != nil {
-			log.Error().Err(err).Msg("помилка підпису повідомлення при синхронізації")
 			return
 		}
 
 		peerForSync := n.chooseRandomPeer()
 		if peerForSync == nil {
-			log.Warn().Msg("не було знайдено peer для синхронізації")
 			return
 		}
 
 		respMsg, err := n.sendStreamMessage(*peerForSync, &m)
 		if err != nil {
-			log.Error().Err(err).Msg("помилка відправки повідомлення при синхронізації")
 			return
 		}
 
-		var respBlock chain.Block
-		if err = json.Unmarshal(respMsg.Data, &respBlock); err != nil {
-			log.Error().Err(err).Msg("помилка десеріалізації отриманого блоку")
-			return
+		var blocks []chain.Block
+		// Спробуємо розпакувати як ResponseBlocks (batch)
+		var respBatch ResponseBlocks
+		if err := json.Unmarshal(respMsg.Data, &respBatch); err == nil && len(respBatch.Blocks) > 0 {
+			blocks = respBatch.Blocks
+		} else {
+			// Якщо не вийшло — можливо це стара нода повернула один блок
+			var singleBlock chain.Block
+			if err := json.Unmarshal(respMsg.Data, &singleBlock); err == nil {
+				if singleBlock.Height >= localBlock.Height+1 {
+					blocks = append(blocks, singleBlock)
+				}
+			}
 		}
 
-		// якщо запитаного блоку немає — ланцюжок актуальний
-		if respBlock.Height < localBlock.Height+1 {
+		// якщо запитаних блоків немає — ланцюжок актуальний
+		if len(blocks) == 0 {
 			log.Info().Msg("blockchain is up to date!")
+			n.ResetRound()
+			return
+		}
 
-			if err := n.setNextProposer(); err != nil {
-				log.Error().Err(err).Msg("помилка вибору proposer після синхронізації")
+		for _, b := range blocks {
+			if err := n.processSyncedBlock(b); err != nil {
+				log.Error().Err(err).Uint32("height", b.Height).Msg("помилка обробки синхронізованого блоку")
 				return
 			}
-
-			if bytes.Equal(n.nextProposer.Address, n.keys.Pub) {
-				go n.tryProposeBlock()
-			}
-			return
 		}
-
-		if err := n.fullBlockVerefication(&respBlock); err != nil {
-			log.Error().Err(err).Msg("блок не пройшов верифікацію при синхронізації")
-			return
-		}
-		if err := n.bs.SaveBlock(&respBlock); err != nil {
-			log.Error().Err(err).Msg("помилка збереження блоку при синхронізації")
-			return
-		}
-		n.lastBlockTime = time.Now()
-
-		if err := n.applyPenalties(&respBlock); err != nil {
-			log.Error().Err(err).Msg("помилка застосування штрафів при синхронізації")
-		}
-
-		if err := n.addValidatorsToDB(&respBlock); err != nil {
-			log.Error().Err(err).Msg("помилка додавання валідаторів при синхронізації")
-			return
-		}
-		if err := n.deleteValidatorsFromDB(&respBlock); err != nil {
-			log.Error().Err(err).Msg("помилка видалення валідаторів при синхронізації")
-			return
-		}
-		if err := n.updateBalancesNonces(&respBlock); err != nil {
-			log.Error().Err(err).Msg("помилка оновлення балансів при синхронізації")
-			return
-		}
-		log.Info().Uint32("height", respBlock.Height).Int64("latency", time.Now().UnixMilli()-respMsg.Timestamp).Msg("додано новий блок до ланцюжка")
 	}
+}
+
+func (n *Node) processSyncedBlock(b chain.Block) error {
+	localBlock, _ := n.bs.GetLastBlock()
+	if b.Height != localBlock.Height+1 {
+		return fmt.Errorf("невірна висота синхронізованого блоку: очікувано %d, отримано %d", localBlock.Height+1, b.Height)
+	}
+
+	if err := n.fullBlockVerefication(&b); err != nil {
+		return err
+	}
+	if err := n.bs.SaveBlock(&b); err != nil {
+		return err
+	}
+	n.lastBlockTime = time.Now()
+
+	n.applyPenalties(&b)
+	n.addValidatorsToDB(&b)
+	n.deleteValidatorsFromDB(&b)
+	n.updateBalancesNonces(&b)
+	
+	log.Info().Uint32("height", b.Height).Msg("додано новий блок до ланцюжка (sync)")
+	return nil
 }
 
 func (n *Node) chooseRandomPeer() *peer.ID {

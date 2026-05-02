@@ -54,6 +54,15 @@ type Reject struct {
 	Round    uint32 `json:"round"`    // номер раунду
 }
 
+type RequestBlocks struct {
+	FromHeight uint32 `json:"fromHeight"`
+	Count      int    `json:"count"`
+}
+
+type ResponseBlocks struct {
+	Blocks []chain.Block `json:"blocks"`
+}
+
 func (m *Message) sign(priv []byte) error {
 	unsignMessageBytes, err := json.Marshal(m)
 	if err != nil {

@@ -307,7 +307,7 @@
                             this.stats = data.stats;
                             
                             // Конвертуємо адресу proposer в hex для коректного відображення
-                            if (this.stats.nextProposer) {
+                            if (this.stats.nextProposer && typeof this.stats.nextProposer === 'object') {
                                 this.stats.nextProposer = this.toHex(this.getVal(this.stats.nextProposer, 'address'));
                             }
 
@@ -320,11 +320,11 @@
                                 };
                             }).sort((a,b) => b.stake - a.stake);
 
-                            this.blocks = data.blocks.map(b => this.formatBlock(b));
+                            this.blocks = (data.blocks || []).map(b => this.formatBlock(b));
                             
                             // Оновлюємо нещодавні транзакції
                             let allTxs = [];
-                            this.blocks.slice().reverse().forEach(b => {
+                            [...this.blocks].reverse().forEach(b => {
                                 (b.Transactions || []).forEach(tx => {
                                     tx.blockHeight = b.Height;
                                     allTxs.push(tx);
@@ -359,9 +359,9 @@
                         
                         if (bRes.ok) {
                             const raw = await bRes.json();
-                            this.blocks = raw.map(b => this.formatBlock(b));
+                            this.blocks = (raw || []).map(b => this.formatBlock(b));
                             let allTxs = [];
-                            this.blocks.slice().reverse().forEach(b => {
+                            [...this.blocks].reverse().forEach(b => {
                                 (b.Transactions || []).forEach(tx => {
                                     tx.blockHeight = b.Height;
                                     allTxs.push(tx);
@@ -408,16 +408,15 @@
                 },
 
                 formatBlock(b) {
-                    const hash = this.getVal(b, 'hash');
-                    const prev = this.getVal(b, 'prevHash');
-                    const proposer = this.getVal(b, 'proposer');
-                    const txs = this.getVal(b, 'transactions') || [];
                     return { 
                         ...b, 
-                        Hash: this.toHex(hash), 
-                        PrevHash: this.toHex(prev),
-                        Proposer: this.toHex(proposer),
-                        Transactions: txs.map(tx => ({
+                        Height: this.getVal(b, 'height'),
+                        Round: this.getVal(b, 'round'),
+                        Timestamp: this.getVal(b, 'timestamp'),
+                        Hash: this.toHex(this.getVal(b, 'hash')), 
+                        PrevHash: this.toHex(this.getVal(b, 'prevHash')),
+                        Proposer: this.toHex(this.getVal(b, 'proposer')),
+                        Transactions: (this.getVal(b, 'transactions') || []).map(tx => ({
                             ...tx,
                             from: this.toHex(this.getVal(tx, 'from')),
                             to: this.toHex(this.getVal(tx, 'to')),

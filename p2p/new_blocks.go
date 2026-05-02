@@ -146,8 +146,8 @@ func (n *Node) addPenaltyTxs(b *chain.Block) error {
 			continue
 		}
 
-		// Штраф: 0.1% від стейку
-		penalty := missedProposer.Amount / 1000
+		// Штраф: 1% від стейку
+		penalty := missedProposer.Amount / 100
 		if penalty == 0 && missedProposer.Amount > 0 {
 			penalty = 1
 		}

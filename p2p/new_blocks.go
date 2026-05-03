@@ -540,14 +540,14 @@ func (n *Node) addValidatorsToDB(block *chain.Block) error {
 		if bytes.Equal(tx.To, []byte(STAKE)) {
 			validator, _ := n.bs.GetValidator(tx.From)
 			if validator != nil {
-				log.Info().Int64("був", validator.Amount).Int64("став", validator.Amount+tx.Amount).Msg("оновлено баланс валідатора")
+				log.Debug().Int64("був", validator.Amount).Int64("став", validator.Amount+tx.Amount).Msg("оновлено баланс валідатора")
 				validator.Amount += tx.Amount
 			} else {
 				validator = &chain.Validator{
 					Address: tx.From,
 					Amount:  tx.Amount,
 				}
-				log.Info().Int64("amount", validator.Amount).Msg("додано валідатора")
+				log.Debug().Int64("amount", validator.Amount).Msg("додано валідатора")
 			}
 
 			if err := n.bs.AddValidator(validator); err != nil {
@@ -571,12 +571,12 @@ func (n *Node) deleteValidatorsFromDB(block *chain.Block) error {
 				if err := n.bs.DeleteValidator(validator); err != nil {
 					return err
 				}
-				log.Info().Hex("address", validator.Address).Msg("валідатора видалено (повний unstake)")
+				log.Debug().Hex("address", validator.Address).Msg("валідатора видалено (повний unstake)")
 			} else {
 				if err := n.bs.AddValidator(validator); err != nil {
 					return err
 				}
-				log.Info().Hex("address", validator.Address).Int64("залишок", validator.Amount).Msg("оновлено стейк валідатора (частковий unstake)")
+				log.Debug().Hex("address", validator.Address).Int64("залишок", validator.Amount).Msg("оновлено стейк валідатора (частковий unstake)")
 			}
 		}
 	}

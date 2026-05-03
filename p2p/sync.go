@@ -18,16 +18,18 @@ func (n *Node) syncBlockchain() {
 	}
 	defer n.syncing.Store(false)
 
-	localBlock, _ := n.bs.GetLastBlock()
 	targetHeight := n.fetchMaxTargetHeight()
+	localBlock, _ := n.bs.GetLastBlock()
 
-	pb := &ProgressBar{
-		Total:   int(targetHeight),
-		Current: int(localBlock.Height),
+	var pb *ProgressBar
+	// Показуємо прогрес-бар лише якщо ми відстаємо більше ніж на 10 блоків
+	if targetHeight > localBlock.Height+10 {
+		pb = &ProgressBar{
+			Total:   int(targetHeight),
+			Current: int(localBlock.Height),
+		}
+		pb.Render()
 	}
-
-	// Виводимо початковий стан
-	pb.Render()
 
 	syncStarted := false
 
@@ -38,16 +40,22 @@ func (n *Node) syncBlockchain() {
 			return
 		}
 
-		// Якщо ми ще не знаємо цільову висоту або вона змінилася, оновлюємо
-		if pb.Total <= pb.Current {
-			targetHeight = n.fetchMaxTargetHeight()
-			if targetHeight > uint32(pb.Total) {
-				pb.Total = int(targetHeight)
+		if pb != nil {
+			pb.Current = int(localBlock.Height)
+			if pb.Total < pb.Current {
+				pb.Total = pb.Current
+			}
+			pb.Render()
+		} else if !syncStarted && targetHeight > localBlock.Height {
+			// Якщо ми ще не створили pb, але бачимо що відстаємо, створюємо
+			if targetHeight > localBlock.Height+10 {
+				pb = &ProgressBar{
+					Total:   int(targetHeight),
+					Current: int(localBlock.Height),
+				}
+				pb.Render()
 			}
 		}
-
-		pb.Current = int(localBlock.Height)
-		pb.Render()
 
 		peerForSync := n.chooseRandomPeer()
 		if peerForSync == nil {

@@ -3,6 +3,7 @@ package p2p
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -21,21 +22,32 @@ func (n *Node) syncBlockchain() {
 	// Запитуємо максимальну висоту серед пірів
 	targetHeight := n.fetchMaxTargetHeight()
 	localBlock, _ := n.bs.GetLastBlock()
-	
+
 	var pb *ProgressBar
-	if targetHeight > localBlock.Height {
-		pb = &ProgressBar{
-			Total:   int(targetHeight),
-			Current: int(localBlock.Height),
-		}
-		fmt.Fprintln(os.Stderr, "Starting synchronization...")
+	// Завжди створюємо прогрес-бар, якщо ми в циклі синхронізації
+	pb = &ProgressBar{
+		Total:   int(targetHeight),
+		Current: int(localBlock.Height),
 	}
 
 	for {
+
 		localBlock, err := n.bs.GetLastBlock()
 		if err != nil {
 			log.Error().Err(err).Msg("помилка отримання останнього блоку при синхронізації")
 			return
+		}
+
+		// Якщо ми ще не знаємо цільову висоту, пробуємо дізнатися її знову
+		if pb == nil {
+			targetHeight = n.fetchMaxTargetHeight()
+			if targetHeight > localBlock.Height {
+				pb = &ProgressBar{
+					Total:   int(targetHeight),
+					Current: int(localBlock.Height),
+				}
+				fmt.Fprintln(os.Stderr, "Starting synchronization...")
+			}
 		}
 
 		if pb != nil {
@@ -119,7 +131,7 @@ func (n *Node) syncBlockchain() {
 func (n *Node) fetchMaxTargetHeight() uint32 {
 	var maxHeight uint32
 	peers := n.host.Network().Peers()
-	
+
 	// Обмежуємо кількість пірів для запиту, щоб не спамити
 	count := 0
 	for _, p := range peers {
@@ -129,7 +141,7 @@ func (n *Node) fetchMaxTargetHeight() uint32 {
 		if n.host.Network().Connectedness(p) != network.Connected {
 			continue
 		}
-		
+
 		h := n.fetchTargetHeight(p)
 		if h > maxHeight {
 			maxHeight = h
@@ -143,7 +155,7 @@ func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
 	m := Message{
 		Type:      MsgRequestLastBlock,
 		Timestamp: time.Now().UnixMilli(),
-		Pub: n.keys.Pub,
+		Pub:       n.keys.Pub,
 	}
 	if err := m.sign(n.keys.Priv); err != nil {
 		return 0
@@ -151,7 +163,7 @@ func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
 
 	resp, err := n.sendStreamMessage(p, &m)
 	if err != nil {
-		log.Debug().Err(err).Str("peer", p.String()).Msg("не вдалося отримати висоту від піра")
+		log.Debug().Err(err).Str("peer", p.String()).Msg("пір не підтримує MsgRequestLastBlock або сталася помилка")
 		return 0
 	}
 
@@ -180,8 +192,7 @@ func (n *Node) processSyncedBlock(b chain.Block) error {
 	n.addValidatorsToDB(&b)
 	n.deleteValidatorsFromDB(&b)
 	n.updateBalancesNonces(&b)
-	
-	log.Debug().Uint32("height", b.Height).Msg("додано новий блок до ланцюжка (sync)")
+
 	return nil
 }
 

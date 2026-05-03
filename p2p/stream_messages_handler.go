@@ -35,6 +35,20 @@ func (n *Node) handleStreamMessages(stream network.Stream) {
 	switch msg.Type {
 	case MsgRequestBlock:
 		n.handleStreamRequestBlock(stream, &msg)
+	case MsgRequestLastBlock:
+		n.handleStreamRequestLastBlock(stream, &msg)
+	}
+}
+
+func (n *Node) handleStreamRequestLastBlock(stream network.Stream, msg *Message) {
+	lastBlock, err := n.bs.GetLastBlock()
+	if err != nil {
+		log.Error().Err(err).Msg("помилка отримання останнього блоку для відповіді")
+		return
+	}
+
+	if err := n.writeBlocksToStream(stream, []chain.Block{*lastBlock}); err != nil {
+		log.Error().Err(err).Msg("помилка відправки останнього блоку в потік")
 	}
 }
 

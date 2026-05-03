@@ -18,6 +18,7 @@ const (
 	// Блоки
 	MsgNewBlock     MessageType = "newBlock"
 	MsgRequestBlock MessageType = "requestBlock"
+	MsgRequestLastBlock MessageType = "requestLastBlock"
 	MsgResponeBlock MessageType = "responeBlock" // data - block
 
 	// Mempool sync

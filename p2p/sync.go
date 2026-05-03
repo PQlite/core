@@ -18,11 +18,34 @@ func (n *Node) syncBlockchain() {
 	}
 	defer n.syncing.Store(false)
 
+	peerForSync := n.chooseRandomPeer()
+	if peerForSync == nil {
+		return
+	}
+
+	// Запитуємо останній блок піра, щоб знати ціль
+	targetHeight := n.fetchTargetHeight(*peerForSync)
+	localBlock, _ := n.bs.GetLastBlock()
+	
+	var pb *ProgressBar
+	if targetHeight > localBlock.Height+1 {
+		pb = &ProgressBar{
+			Total:   int(targetHeight),
+			Current: int(localBlock.Height),
+		}
+		fmt.Println("Starting synchronization...")
+	}
+
 	for {
 		localBlock, err := n.bs.GetLastBlock()
 		if err != nil {
 			log.Error().Err(err).Msg("помилка отримання останнього блоку при синхронізації")
 			return
+		}
+
+		if pb != nil {
+			pb.Current = int(localBlock.Height)
+			pb.Render()
 		}
 
 		// Запитуємо batch блоків
@@ -39,11 +62,6 @@ func (n *Node) syncBlockchain() {
 			Pub:       n.keys.Pub,
 		}
 		if err = m.sign(n.keys.Priv); err != nil {
-			return
-		}
-
-		peerForSync := n.chooseRandomPeer()
-		if peerForSync == nil {
 			return
 		}
 
@@ -69,21 +87,51 @@ func (n *Node) syncBlockchain() {
 
 		// якщо запитаних блоків немає — ланцюжок актуальний
 		if len(blocks) == 0 {
+			if pb != nil {
+				pb.Current = pb.Total
+				pb.Render()
+			}
 			log.Info().Msg("blockchain is up to date!")
 			n.ResetRound()
 			return
 		}
 
 		for _, b := range blocks {
-			if err := n.processSyncedBlock(b); err != nil {
+			if err := n.processSyncedBlock(b, pb != nil); err != nil {
 				log.Error().Err(err).Uint32("height", b.Height).Msg("помилка обробки синхронізованого блоку")
 				return
+			}
+			if pb != nil {
+				pb.Current = int(b.Height)
+				pb.Render()
 			}
 		}
 	}
 }
 
-func (n *Node) processSyncedBlock(b chain.Block) error {
+func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
+	m := Message{
+		Type:      MsgRequestLastBlock,
+		Timestamp: time.Now().UnixMilli(),
+		Pub:       n.keys.Pub,
+	}
+	if err := m.sign(n.keys.Priv); err != nil {
+		return 0
+	}
+
+	resp, err := n.sendStreamMessage(p, &m)
+	if err != nil {
+		return 0
+	}
+
+	var batch ResponseBlocks
+	if err := json.Unmarshal(resp.Data, &batch); err == nil && len(batch.Blocks) > 0 {
+		return batch.Blocks[0].Height
+	}
+	return 0
+}
+
+func (n *Node) processSyncedBlock(b chain.Block, silent bool) error {
 	localBlock, _ := n.bs.GetLastBlock()
 	if b.Height != localBlock.Height+1 {
 		return fmt.Errorf("невірна висота синхронізованого блоку: очікувано %d, отримано %d", localBlock.Height+1, b.Height)
@@ -102,7 +150,9 @@ func (n *Node) processSyncedBlock(b chain.Block) error {
 	n.deleteValidatorsFromDB(&b)
 	n.updateBalancesNonces(&b)
 	
-	log.Info().Uint32("height", b.Height).Msg("додано новий блок до ланцюжка (sync)")
+	if !silent {
+		log.Info().Uint32("height", b.Height).Msg("додано новий блок до ланцюжка (sync)")
+	}
 	return nil
 }
 

@@ -19,8 +19,8 @@ func (pb *ProgressBar) Render() {
 	pb.spinner = (pb.spinner + 1) % len(spinnerChars)
 	s := spinnerChars[pb.spinner]
 
-	if pb.Total <= 0 {
-		fmt.Fprintf(os.Stderr, "\r\033[K%s Syncing... Block: %d (Target unknown)", s, pb.Current)
+	if pb.Total <= pb.Current {
+		fmt.Fprintf(os.Stderr, "\r\033[K%s Syncing... Block: %d (Scanning for network height...)", s, pb.Current)
 		return
 	}
 
@@ -32,8 +32,8 @@ func (pb *ProgressBar) Render() {
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 	
 	fmt.Fprintf(os.Stderr, "\r\033[K%s Syncing: [%s] %.1f%% (%d/%d)", s, bar, percent*100, pb.Current, pb.Total)
-	
-	if pb.Current >= pb.Total && pb.Total > 0 {
-		fmt.Fprintln(os.Stderr, "\nSync completed!")
-	}
+}
+
+func (pb *ProgressBar) Finish() {
+	fmt.Fprintln(os.Stderr, "\n\033[32mSync completed successfully!\033[0m")
 }

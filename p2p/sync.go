@@ -3,7 +3,6 @@ package p2p
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/PQlite/core/chain"
@@ -19,47 +18,42 @@ func (n *Node) syncBlockchain() {
 	}
 	defer n.syncing.Store(false)
 
-	// Запитуємо максимальну висоту серед пірів
-	targetHeight := n.fetchMaxTargetHeight()
 	localBlock, _ := n.bs.GetLastBlock()
+	targetHeight := n.fetchMaxTargetHeight()
 
-	var pb *ProgressBar
-	// Завжди створюємо прогрес-бар, якщо ми в циклі синхронізації
-	pb = &ProgressBar{
+	pb := &ProgressBar{
 		Total:   int(targetHeight),
 		Current: int(localBlock.Height),
 	}
 
-	for {
+	// Виводимо початковий стан
+	pb.Render()
 
+	syncStarted := false
+
+	for {
 		localBlock, err := n.bs.GetLastBlock()
 		if err != nil {
 			log.Error().Err(err).Msg("помилка отримання останнього блоку при синхронізації")
 			return
 		}
 
-		// Якщо ми ще не знаємо цільову висоту, пробуємо дізнатися її знову
-		if pb == nil {
+		// Якщо ми ще не знаємо цільову висоту або вона змінилася, оновлюємо
+		if pb.Total <= pb.Current {
 			targetHeight = n.fetchMaxTargetHeight()
-			if targetHeight > localBlock.Height {
-				pb = &ProgressBar{
-					Total:   int(targetHeight),
-					Current: int(localBlock.Height),
-				}
-				fmt.Fprintln(os.Stderr, "Starting synchronization...")
+			if targetHeight > uint32(pb.Total) {
+				pb.Total = int(targetHeight)
 			}
 		}
 
-		if pb != nil {
-			pb.Current = int(localBlock.Height)
-			if pb.Total < pb.Current {
-				pb.Total = pb.Current
-			}
-			pb.Render()
-		}
+		pb.Current = int(localBlock.Height)
+		pb.Render()
 
 		peerForSync := n.chooseRandomPeer()
 		if peerForSync == nil {
+			if syncStarted {
+				pb.Finish()
+			}
 			return
 		}
 
@@ -83,16 +77,14 @@ func (n *Node) syncBlockchain() {
 		respMsg, err := n.sendStreamMessage(*peerForSync, &m)
 		if err != nil {
 			log.Debug().Err(err).Str("peer", peerForSync.String()).Msg("помилка отримання блоків від піра")
-			continue // Спробуємо іншого піра
+			continue
 		}
 
 		var blocks []chain.Block
-		// Спробуємо розпакувати як ResponseBlocks (batch)
 		var respBatch ResponseBlocks
 		if err := json.Unmarshal(respMsg.Data, &respBatch); err == nil && len(respBatch.Blocks) > 0 {
 			blocks = respBatch.Blocks
 		} else {
-			// Якщо не вийшло — можливо це стара нода повернула один блок
 			var singleBlock chain.Block
 			if err := json.Unmarshal(respMsg.Data, &singleBlock); err == nil {
 				if singleBlock.Height >= localBlock.Height+1 {
@@ -101,33 +93,29 @@ func (n *Node) syncBlockchain() {
 			}
 		}
 
-		// якщо запитаних блоків немає — ланцюжок актуальний
 		if len(blocks) == 0 {
-			if pb != nil {
+			if syncStarted {
 				pb.Current = pb.Total
 				pb.Render()
+				pb.Finish()
 			}
 			log.Info().Msg("blockchain is up to date!")
 			n.ResetRound()
 			return
 		}
 
+		syncStarted = true
 		for _, b := range blocks {
 			if err := n.processSyncedBlock(b); err != nil {
 				log.Error().Err(err).Uint32("height", b.Height).Msg("помилка обробки синхронізованого блоку")
 				return
 			}
-			if pb != nil {
-				pb.Current = int(b.Height)
-				if pb.Total < pb.Current {
-					pb.Total = pb.Current
-				}
-				pb.Render()
-			}
+			pb.Current = int(b.Height)
+			// Оновлюємо рендер частіше під час активної синхронізації
+			pb.Render()
 		}
 	}
 }
-
 func (n *Node) fetchMaxTargetHeight() uint32 {
 	var maxHeight uint32
 	peers := n.host.Network().Peers()

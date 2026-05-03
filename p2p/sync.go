@@ -18,17 +18,12 @@ func (n *Node) syncBlockchain() {
 	}
 	defer n.syncing.Store(false)
 
-	targetHeight := n.fetchMaxTargetHeight()
 	localBlock, _ := n.bs.GetLastBlock()
+	targetHeight := n.fetchMaxTargetHeight()
 
-	var pb *ProgressBar
-	// Показуємо прогрес-бар лише якщо ми відстаємо більше ніж на 10 блоків
-	if targetHeight > localBlock.Height+10 {
-		pb = &ProgressBar{
-			Total:   int(targetHeight),
-			Current: int(localBlock.Height),
-		}
-		pb.Render()
+	pb := &ProgressBar{
+		Total:   int(targetHeight),
+		Current: int(localBlock.Height),
 	}
 
 	syncStarted := false
@@ -40,26 +35,20 @@ func (n *Node) syncBlockchain() {
 			return
 		}
 
-		if pb != nil {
-			pb.Current = int(localBlock.Height)
-			if pb.Total < pb.Current {
-				pb.Total = pb.Current
-			}
-			pb.Render()
-		} else if !syncStarted && targetHeight > localBlock.Height {
-			// Якщо ми ще не створили pb, але бачимо що відстаємо, створюємо
-			if targetHeight > localBlock.Height+10 {
-				pb = &ProgressBar{
-					Total:   int(targetHeight),
-					Current: int(localBlock.Height),
-				}
-				pb.Render()
+		// Якщо ми отримали блоки, але Total все ще 0 або менше Current, пробуємо оновити
+		if pb.Total <= pb.Current {
+			targetHeight = n.fetchMaxTargetHeight()
+			if targetHeight > uint32(pb.Total) {
+				pb.Total = int(targetHeight)
 			}
 		}
 
+		pb.Current = int(localBlock.Height)
+		pb.Render()
+
 		peerForSync := n.chooseRandomPeer()
 		if peerForSync == nil {
-			if syncStarted && pb != nil {
+			if syncStarted {
 				pb.Finish()
 			}
 			return
@@ -102,7 +91,7 @@ func (n *Node) syncBlockchain() {
 		}
 
 		if len(blocks) == 0 {
-			if syncStarted && pb != nil {
+			if syncStarted {
 				pb.Current = pb.Total
 				pb.Render()
 				pb.Finish()
@@ -118,10 +107,8 @@ func (n *Node) syncBlockchain() {
 				log.Error().Err(err).Uint32("height", b.Height).Msg("помилка обробки синхронізованого блоку")
 				return
 			}
-			if pb != nil {
-				pb.Current = int(b.Height)
-				pb.Render()
-			}
+			pb.Current = int(b.Height)
+			pb.Render()
 		}
 	}
 }

@@ -56,138 +56,190 @@ func (bs *BlockStorage) GetSize() (int64, error) {
 }
 
 func (bs *BlockStorage) SaveBlock(block *chain.Block) error {
-	height := fmt.Sprintf("block:%d", block.Height)
-	data, err := json.Marshal(block)
-	if err != nil {
-		return err
-	}
+        height := fmt.Sprintf("block:%d", block.Height)
+        data, err := json.Marshal(block)
+        if err != nil {
+                return err
+        }
 
-	txn := bs.db.NewTransaction(true)
-	defer txn.Discard()
+        txn := bs.db.NewTransaction(true)
+        defer txn.Discard()
 
-	err = txn.Set([]byte(height), data)
-	if err != nil {
-		return err
-	}
+        err = txn.Set([]byte(height), data)
+        if err != nil {
+                return err
+        }
 
-	// Index transactions
-	for _, tx := range block.Transactions {
-		txKey := "tx:" + hex.EncodeToString(tx.Hash())
-		err = txn.Set([]byte(txKey), []byte(strconv.FormatUint(uint64(block.Height), 10)))
-		if err != nil {
-			return err
-		}
-	}
+        // Оновлюємо останню висоту
+        err = txn.Set([]byte("last_height"), []byte(strconv.FormatUint(uint64(block.Height), 10)))
+        if err != nil {
+                return err
+        }
 
-	if err = txn.Commit(); err != nil {
-		return err
-	}
-	return bs.db.Sync()
+        // Index transactions
+        for _, tx := range block.Transactions {
+                txKey := "tx:" + hex.EncodeToString(tx.Hash())
+                err = txn.Set([]byte(txKey), []byte(strconv.FormatUint(uint64(block.Height), 10)))
+                if err != nil {
+                        return err
+                }
+        }
+
+        if err = txn.Commit(); err != nil {
+                return err
+        }
+        return bs.db.Sync()
 }
 
 func (bs *BlockStorage) GetTxBlock(txHash []byte) (uint32, error) {
-	key := "tx:" + hex.EncodeToString(txHash)
-	var height uint32
+        key := "tx:" + hex.EncodeToString(txHash)
+        var height uint32
 
-	err := bs.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(key))
-		if err != nil {
-			return err
-		}
+        err := bs.db.View(func(txn *badger.Txn) error {
+                item, err := txn.Get([]byte(key))
+                if err != nil {
+                        return err
+                }
 
-		return item.Value(func(val []byte) error {
-			h, err := strconv.ParseUint(string(val), 10, 32)
-			if err != nil {
-				return err
-			}
-			height = uint32(h)
-			return nil
-		})
-	})
+                return item.Value(func(val []byte) error {
+                        h, err := strconv.ParseUint(string(val), 10, 32)
+                        if err != nil {
+                                return err
+                        }
+                        height = uint32(h)
+                        return nil
+                })
+        })
 
-	if err != nil {
-		return 0, err
-	}
-	return height, nil
+        if err != nil {
+                return 0, err
+        }
+        return height, nil
 }
 
-func (bs *BlockStorage) GetBlock(height uint32) (*chain.Block, error) {	var block chain.Block
-	key := fmt.Sprintf("block:%d", height)
+func (bs *BlockStorage) GetBlock(height uint32) (*chain.Block, error) {
+        var block chain.Block
+        key := fmt.Sprintf("block:%d", height)
 
-	err := bs.db.View(func(txn *badger.Txn) error {
-		data, err := txn.Get([]byte(key))
-		if err != nil {
-			return err
-		}
+        err := bs.db.View(func(txn *badger.Txn) error {
+                data, err := txn.Get([]byte(key))
+                if err != nil {
+                        return err
+                }
 
-		return data.Value(func(val []byte) error {
-			return json.Unmarshal(val, &block)
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
+                return data.Value(func(val []byte) error {
+                        return json.Unmarshal(val, &block)
+                })
+        })
+        if err != nil {
+                return nil, err
+        }
 
-	return &block, nil
+        return &block, nil
 }
 
 func (bs *BlockStorage) GetLastBlock() (*chain.Block, error) {
-	var lastBlock *chain.Block
-	var maxBlockNumber int64 = -1
+        var height uint32
+        err := bs.db.View(func(txn *badger.Txn) error {
+                item, err := txn.Get([]byte("last_height"))
+                if err != nil {
+                        return err
+                }
+                return item.Value(func(val []byte) error {
+                        h, err := strconv.ParseUint(string(val), 10, 32)
+                        if err != nil {
+                                return err
+                        }
+                        height = uint32(h)
+                        return nil
+                })
+        })
 
-	err := bs.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.Prefix = []byte("block:")
-		it := txn.NewIterator(opts)
-		defer it.Close()
+        if err == nil {
+                return bs.GetBlock(height)
+        }
 
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			key := item.Key()
-			keyStr := string(key)
+        // Fallback: якщо last_height не знайдено, шукаємо перебором (для сумісності)
+        var lastBlock *chain.Block
+        var maxBlockNumber int64 = -1
 
-			numStr := strings.TrimPrefix(keyStr, "block:")
-			blockNumber, err := strconv.ParseInt(numStr, 10, 64)
-			if err != nil {
-				continue
-			}
+        err = bs.db.View(func(txn *badger.Txn) error {
+                opts := badger.DefaultIteratorOptions
+                opts.Prefix = []byte("block:")
+                it := txn.NewIterator(opts)
+                defer it.Close()
 
-			if blockNumber > maxBlockNumber {
-				maxBlockNumber = blockNumber
-			}
-		}
+                for it.Rewind(); it.Valid(); it.Next() {
+                        item := it.Item()
+                        key := item.Key()
+                        keyStr := string(key)
 
-		if maxBlockNumber != -1 {
-			keyToFetch := []byte("block:" + strconv.FormatInt(maxBlockNumber, 10))
-			item, err := txn.Get(keyToFetch)
-			if err != nil {
-				return err
-			}
+                        numStr := strings.TrimPrefix(keyStr, "block:")
+                        blockNumber, err := strconv.ParseInt(numStr, 10, 64)
+                        if err != nil {
+                                continue
+                        }
 
-			return item.Value(func(val []byte) error {
-				var block chain.Block
-				if err := json.Unmarshal(val, &block); err != nil {
-					return err
-				}
-				lastBlock = &block
-				return nil
-			})
-		}
+                        if blockNumber > maxBlockNumber {
+                                maxBlockNumber = blockNumber
+                        }
+                }
 
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
+                if maxBlockNumber != -1 {
+                        return bs.db.View(func(txn *badger.Txn) error {
+                                keyToFetch := []byte("block:" + strconv.FormatInt(maxBlockNumber, 10))
+                                item, err := txn.Get(keyToFetch)
+                                if err != nil {
+                                        return err
+                                }
 
-	if lastBlock == nil {
-		return nil, fmt.Errorf("no blocks found")
-	}
+                                return item.Value(func(val []byte) error {
+                                        var block chain.Block
+                                        if err := json.Unmarshal(val, &block); err != nil {
+                                                return err
+                                        }
+                                        lastBlock = &block
+                                        return nil
+                                })
+                        })
+                }
 
-	return lastBlock, nil
+                return nil
+        })
+        if err != nil {
+                return nil, err
+        }
+
+        if lastBlock == nil {
+                return nil, fmt.Errorf("no blocks found")
+        }
+
+        return lastBlock, nil
+}
+
+func (bs *BlockStorage) GetLastBlocks(limit int) ([]*chain.Block, error) {
+        lastBlock, err := bs.GetLastBlock()
+        if err != nil {
+                return nil, err
+        }
+
+        var blocks []*chain.Block
+        startHeight := lastBlock.Height
+        for i := 0; i < limit; i++ {
+                if int(startHeight)-i < 0 {
+                        break
+                }
+                block, err := bs.GetBlock(startHeight - uint32(i))
+                if err == nil {
+                        blocks = append(blocks, block)
+                }
+        }
+
+        return blocks, nil
 }
 
 func (bs *BlockStorage) GetAllBlocks() ([]*chain.Block, error) {
+
 	var blocks []*chain.Block
 
 	err := bs.db.View(func(txn *badger.Txn) error {

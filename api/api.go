@@ -169,7 +169,13 @@ func (s *Server) handleGetBlock(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleGetAllBlocks(c *fiber.Ctx) error {
-	blocks, err := s.bs.GetAllBlocks()
+	limitStr := c.Query("limit", "100")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 100
+	}
+
+	blocks, err := s.bs.GetLastBlocks(limit)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
@@ -310,6 +316,17 @@ func (s *Server) handleGetAllWallets(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
+
+	// Сортуємо за балансом (від більшого до меншого)
+	sort.Slice(wallets, func(i, j int) bool {
+		return wallets[i].Balance > wallets[j].Balance
+	})
+
+	// Обмежуємо топ-100 для UI
+	if len(wallets) > 100 {
+		wallets = wallets[:100]
+	}
+
 	return c.JSON(wallets)
 }
 
@@ -349,7 +366,7 @@ func (s *Server) runWebSocketPoller() {
 
 // Допоміжна функція для відправки повного стану новому клієнту
 func (s *Server) sendFullState(c *websocket.Conn) {
-	blocks, _ := s.bs.GetAllBlocks()
+	blocks, _ := s.bs.GetLastBlocks(50)
 	// Сортуємо блоки по висоті для коректного відображення в UI
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i].Height < blocks[j].Height
@@ -367,6 +384,13 @@ func (s *Server) sendFullState(c *websocket.Conn) {
 	}
 
 	wallets, _ := s.bs.GetAllWallets()
+	sort.Slice(wallets, func(i, j int) bool {
+		return wallets[i].Balance > wallets[j].Balance
+	})
+	if len(wallets) > 100 {
+		wallets = wallets[:100]
+	}
+
 	lastBlock, _ := s.bs.GetLastBlock()
 	mempool := s.mempool.GetTransactions()
 	size, _ := s.bs.GetSize()

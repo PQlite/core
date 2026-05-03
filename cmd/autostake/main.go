@@ -22,7 +22,7 @@ type keyFile struct {
 func main() {
 	keyPath := flag.String("key", ".env", "файл з ключами гаманця")
 	node := flag.String("node", "http://localhost:8081", "адреса ноди")
-	interval := flag.Duration("interval", 1*time.Second, "інтервал перевірки")
+	interval := flag.Duration("interval", 5*time.Second, "інтервал перевірки")
 	flag.Parse()
 
 	kf := loadKey(*keyPath)

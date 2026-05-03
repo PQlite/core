@@ -59,7 +59,7 @@ func (n *Node) syncBlockchain() {
 
 		peerForSync := n.chooseRandomPeer()
 		if peerForSync == nil {
-			if syncStarted {
+			if syncStarted && pb != nil {
 				pb.Finish()
 			}
 			return
@@ -102,7 +102,7 @@ func (n *Node) syncBlockchain() {
 		}
 
 		if len(blocks) == 0 {
-			if syncStarted {
+			if syncStarted && pb != nil {
 				pb.Current = pb.Total
 				pb.Render()
 				pb.Finish()
@@ -118,9 +118,10 @@ func (n *Node) syncBlockchain() {
 				log.Error().Err(err).Uint32("height", b.Height).Msg("помилка обробки синхронізованого блоку")
 				return
 			}
-			pb.Current = int(b.Height)
-			// Оновлюємо рендер частіше під час активної синхронізації
-			pb.Render()
+			if pb != nil {
+				pb.Current = int(b.Height)
+				pb.Render()
+			}
 		}
 	}
 }

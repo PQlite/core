@@ -36,3 +36,11 @@ core
 
 .gemini/
 gha-creds-*.json
+
+# Executables
+./cmd/cli/pqlite
+./cli
+./main
+./bench
+./autostake
+./core

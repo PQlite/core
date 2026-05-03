@@ -25,6 +25,7 @@ func (n *Node) syncBlockchain() {
 		Total:   int(targetHeight),
 		Current: int(localBlock.Height),
 	}
+	GlobalProgressBar = pb
 
 	syncStarted := false
 

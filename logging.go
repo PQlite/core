@@ -4,10 +4,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/PQlite/core/p2p"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 func init() {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	safeWriter := p2p.NewLogWrapper(os.Stderr)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: safeWriter, TimeFormat: time.RFC3339})
 }

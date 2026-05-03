@@ -147,7 +147,7 @@ func (n *Node) Start() {
 	// Register notifications BEFORE starting connections to avoid missing initial events.
 	n.host.Network().Notify(&libp2pnet.NotifyBundle{
 		ConnectedF: func(_ libp2pnet.Network, conn libp2pnet.Conn) {
-			log.Info().Str("peer", conn.RemotePeer().String()).Msg("новий пір — запускаємо синхронізацію")
+			log.Debug().Str("peer", conn.RemotePeer().String()).Msg("новий пір — запускаємо синхронізацію")
 			go n.syncBlockchain()
 		},
 	})
@@ -315,7 +315,7 @@ func (n *Node) connectToBootstrap() {
 		if err = n.host.Connect(n.ctx, *pi); err != nil {
 			log.Error().Err(err).Str("address", addr).Msg("помилка підключення до bootstrap")
 		} else {
-			log.Info().Str("address", pi.Addrs[0].String()).Msg("підключено до bootstrap")
+			log.Debug().Str("address", pi.Addrs[0].String()).Msg("підключено до bootstrap")
 		}
 	}
 }

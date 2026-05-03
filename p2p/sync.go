@@ -18,13 +18,8 @@ func (n *Node) syncBlockchain() {
 	}
 	defer n.syncing.Store(false)
 
-	peerForSync := n.chooseRandomPeer()
-	if peerForSync == nil {
-		return
-	}
-
-	// Запитуємо останній блок піра, щоб знати ціль
-	targetHeight := n.fetchTargetHeight(*peerForSync)
+	// Запитуємо максимальну висоту серед пірів
+	targetHeight := n.fetchMaxTargetHeight()
 	localBlock, _ := n.bs.GetLastBlock()
 	
 	var pb *ProgressBar
@@ -34,8 +29,6 @@ func (n *Node) syncBlockchain() {
 			Current: int(localBlock.Height),
 		}
 		fmt.Fprintln(os.Stderr, "Starting synchronization...")
-	} else {
-		log.Debug().Uint32("target", targetHeight).Uint32("local", localBlock.Height).Msg("не вдалося визначити цільову висоту або ми вже актуальні")
 	}
 
 	for {
@@ -47,7 +40,15 @@ func (n *Node) syncBlockchain() {
 
 		if pb != nil {
 			pb.Current = int(localBlock.Height)
+			if pb.Total < pb.Current {
+				pb.Total = pb.Current
+			}
 			pb.Render()
+		}
+
+		peerForSync := n.chooseRandomPeer()
+		if peerForSync == nil {
+			return
 		}
 
 		// Запитуємо batch блоків
@@ -69,8 +70,8 @@ func (n *Node) syncBlockchain() {
 
 		respMsg, err := n.sendStreamMessage(*peerForSync, &m)
 		if err != nil {
-			log.Debug().Err(err).Msg("помилка отримання блоків від піра")
-			return
+			log.Debug().Err(err).Str("peer", peerForSync.String()).Msg("помилка отримання блоків від піра")
+			continue // Спробуємо іншого піра
 		}
 
 		var blocks []chain.Block
@@ -106,10 +107,36 @@ func (n *Node) syncBlockchain() {
 			}
 			if pb != nil {
 				pb.Current = int(b.Height)
+				if pb.Total < pb.Current {
+					pb.Total = pb.Current
+				}
 				pb.Render()
 			}
 		}
 	}
+}
+
+func (n *Node) fetchMaxTargetHeight() uint32 {
+	var maxHeight uint32
+	peers := n.host.Network().Peers()
+	
+	// Обмежуємо кількість пірів для запиту, щоб не спамити
+	count := 0
+	for _, p := range peers {
+		if count > 5 {
+			break
+		}
+		if n.host.Network().Connectedness(p) != network.Connected {
+			continue
+		}
+		
+		h := n.fetchTargetHeight(p)
+		if h > maxHeight {
+			maxHeight = h
+		}
+		count++
+	}
+	return maxHeight
 }
 
 func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
@@ -124,8 +151,7 @@ func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
 
 	resp, err := n.sendStreamMessage(p, &m)
 	if err != nil {
-		// Якщо пір не підтримує MsgRequestLastBlock, пробуємо через MsgRequestBlock останнього можливого
-		log.Debug().Err(err).Msg("MsgRequestLastBlock не підтримується піром")
+		log.Debug().Err(err).Str("peer", p.String()).Msg("не вдалося отримати висоту від піра")
 		return 0
 	}
 

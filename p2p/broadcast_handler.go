@@ -136,7 +136,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 		log.Error().Err(err).Msg("помилка розпаковки blockProposal")
 		return
 	}
-	log.Info().Uint32("height", block.Height).Int64("latency", time.Now().UnixMilli()-block.Timestamp).Msg("отримано новий блок")
+	log.Debug().Uint32("height", block.Height).Int64("latency", time.Now().UnixMilli()-block.Timestamp).Msg("отримано новий блок")
 
 	blockBytes, err := block.MarshalDeterministic()
 	if err != nil {

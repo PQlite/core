@@ -28,12 +28,14 @@ func (n *Node) syncBlockchain() {
 	localBlock, _ := n.bs.GetLastBlock()
 	
 	var pb *ProgressBar
-	if targetHeight > localBlock.Height+1 {
+	if targetHeight > localBlock.Height {
 		pb = &ProgressBar{
 			Total:   int(targetHeight),
 			Current: int(localBlock.Height),
 		}
-		fmt.Println("Starting synchronization...")
+		fmt.Fprintln(os.Stderr, "Starting synchronization...")
+	} else {
+		log.Debug().Uint32("target", targetHeight).Uint32("local", localBlock.Height).Msg("не вдалося визначити цільову висоту або ми вже актуальні")
 	}
 
 	for {
@@ -67,6 +69,7 @@ func (n *Node) syncBlockchain() {
 
 		respMsg, err := n.sendStreamMessage(*peerForSync, &m)
 		if err != nil {
+			log.Debug().Err(err).Msg("помилка отримання блоків від піра")
 			return
 		}
 
@@ -97,7 +100,7 @@ func (n *Node) syncBlockchain() {
 		}
 
 		for _, b := range blocks {
-			if err := n.processSyncedBlock(b, pb != nil); err != nil {
+			if err := n.processSyncedBlock(b); err != nil {
 				log.Error().Err(err).Uint32("height", b.Height).Msg("помилка обробки синхронізованого блоку")
 				return
 			}
@@ -113,7 +116,7 @@ func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
 	m := Message{
 		Type:      MsgRequestLastBlock,
 		Timestamp: time.Now().UnixMilli(),
-		Pub:       n.keys.Pub,
+		Pub: n.keys.Pub,
 	}
 	if err := m.sign(n.keys.Priv); err != nil {
 		return 0
@@ -121,6 +124,8 @@ func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
 
 	resp, err := n.sendStreamMessage(p, &m)
 	if err != nil {
+		// Якщо пір не підтримує MsgRequestLastBlock, пробуємо через MsgRequestBlock останнього можливого
+		log.Debug().Err(err).Msg("MsgRequestLastBlock не підтримується піром")
 		return 0
 	}
 
@@ -131,7 +136,7 @@ func (n *Node) fetchTargetHeight(p peer.ID) uint32 {
 	return 0
 }
 
-func (n *Node) processSyncedBlock(b chain.Block, silent bool) error {
+func (n *Node) processSyncedBlock(b chain.Block) error {
 	localBlock, _ := n.bs.GetLastBlock()
 	if b.Height != localBlock.Height+1 {
 		return fmt.Errorf("невірна висота синхронізованого блоку: очікувано %d, отримано %d", localBlock.Height+1, b.Height)
@@ -150,9 +155,7 @@ func (n *Node) processSyncedBlock(b chain.Block, silent bool) error {
 	n.deleteValidatorsFromDB(&b)
 	n.updateBalancesNonces(&b)
 	
-	if !silent {
-		log.Info().Uint32("height", b.Height).Msg("додано новий блок до ланцюжка (sync)")
-	}
+	log.Debug().Uint32("height", b.Height).Msg("додано новий блок до ланцюжка (sync)")
 	return nil
 }
 

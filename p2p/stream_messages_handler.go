@@ -124,6 +124,8 @@ func (n *Node) sendStreamMessage(targetPeer peer.ID, msg *Message) (*Message, er
 	}
 	defer stream.Close()
 
+	stream.SetDeadline(time.Now().Add(5 * time.Second))
+
 	writer := bufio.NewWriter(stream)
 	reader := bufio.NewReader(stream)
 

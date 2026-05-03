@@ -299,7 +299,7 @@ func (n *Node) handleMsgCommit(data []byte) {
 		return
 	}
 	n.lastBlockTime = time.Now()
-	log.Info().Hex("hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("новий блок додано до ланцюжка")
+	log.Debug().Hex("hash", commit.Block.Hash).Uint32("height", commit.Block.Height).Msg("новий блок додано до ланцюжка")
 
 	if err := n.applyPenalties(&commit.Block); err != nil {
 		log.Error().Err(err).Msg("помилка застосування штрафів")
@@ -335,7 +335,7 @@ func (n *Node) tryProposeBlock() {
 	}
 	defer n.isProposing.Store(false)
 
-	log.Info().Msg("я proposer — починаю створення блоку")
+	log.Debug().Msg("я proposer — починаю створення блоку")
 
 	blockProposalMsg, err := n.getMsgBlockProposalMsg()
 	if err != nil {

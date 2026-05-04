@@ -20,7 +20,7 @@ func (n *Node) chooseValidator() (chain.Validator, error) {
 		return chain.Validator{}, fmt.Errorf("помилка отримання списку валідаторів: %w", err)
 	}
 
-	nextProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, n.currentRound)
+	nextProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, n.currentRound, lastBlock.Proposer)
 	if err != nil {
 		return chain.Validator{}, err
 	}
@@ -136,7 +136,7 @@ func (n *Node) addPenaltyTxs(b *chain.Block) error {
 	}
 
 	for r := uint32(0); r < b.Round; r++ {
-		missedProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, r)
+		missedProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, r, lastBlock.Proposer)
 		if err != nil {
 			continue
 		}
@@ -176,7 +176,7 @@ func (n *Node) applyPenalties(block *chain.Block) error {
 		if bytes.Equal(tx.To, []byte(FINEWALLET)) {
 			validator, _ := n.bs.GetValidator(tx.From)
 			if validator != nil {
-				log.Warn().
+				log.Debug().
 					Hex("proposer", validator.Address).
 					Uint32("height", block.Height).
 					Int64("penalty", tx.Amount).
@@ -235,7 +235,7 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 	if err != nil {
 		return fmt.Errorf("помилка отримання списку валідаторів: %w", err)
 	}
-	expectedProposer, err := chain.SelectNextProposer(lastLocalBlock.Hash, *validators, block.Round)
+	expectedProposer, err := chain.SelectNextProposer(lastLocalBlock.Hash, *validators, block.Round, lastLocalBlock.Proposer)
 	if err != nil {
 		return fmt.Errorf("помилка вибору очікуваного proposer-а: %w", err)
 	}
@@ -246,7 +246,7 @@ func (n *Node) fullBlockVerefication(block *chain.Block) error {
 
 	// Якщо раунд блоку відрізняється від нашого — оновлюємо свій стан
 	if block.Round != n.currentRound {
-		log.Warn().
+		log.Debug().
 			Uint32("local_round", n.currentRound).
 			Uint32("block_round", block.Round).
 			Msg("раунд блоку відрізняється від локального — синхронізація раунду")
@@ -295,7 +295,7 @@ func (n *Node) verifyPenaltyTxs(b *chain.Block) error {
 	// Створюємо карту очікуваних штрафів
 	expectedFines := make(map[string]int64)
 	for r := uint32(0); r < b.Round; r++ {
-		missedProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, r)
+		missedProposer, err := chain.SelectNextProposer(lastBlock.Hash, *validators, r, lastBlock.Proposer)
 		if err != nil {
 			continue
 		}
@@ -375,9 +375,10 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 
 	toInclude := make([]*chain.Transaction, 0, len(txs))
 	toDrop := make([]*chain.Transaction, 0)
-	
+
 	nonces := make(map[string]uint32)
 	balances := make(map[string]int64)
+	stakes := make(map[string]int64)
 
 	for _, tx := range txs {
 		if n.isSystemAddr(tx.From) {
@@ -393,10 +394,18 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 			}
 			nonces[fromAddr] = wallet.Nonce
 			balances[fromAddr] = wallet.Balance
+
+			validator, _ := n.bs.GetValidator(tx.From)
+			if validator != nil {
+				stakes[fromAddr] = validator.Amount
+			} else {
+				stakes[fromAddr] = 0
+			}
 		}
 
 		currentNonce := nonces[fromAddr]
 		currentBalance := balances[fromAddr]
+		currentStake := stakes[fromAddr]
 
 		if tx.Nonce <= currentNonce {
 			toDrop = append(toDrop, tx)
@@ -404,6 +413,26 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 		}
 
 		if tx.Nonce > currentNonce+1 {
+			continue
+		}
+
+		// Спеціальна логіка для Unstake
+		if bytes.Equal(tx.To, []byte(UNSTAKE)) {
+			if currentStake < tx.Amount {
+				log.Debug().Hex("from", tx.From).Int64("stake", currentStake).Int64("requested", tx.Amount).Msg("недостатньо стейку для unstake")
+				toDrop = append(toDrop, tx)
+				continue
+			}
+			if currentBalance < tx.Fee {
+				log.Debug().Hex("from", tx.From).Int64("balance", currentBalance).Int64("fee", tx.Fee).Msg("недостатньо балансу для комісії unstake")
+				toDrop = append(toDrop, tx)
+				continue
+			}
+
+			toInclude = append(toInclude, tx)
+			nonces[fromAddr] = tx.Nonce
+			balances[fromAddr] = currentBalance - tx.Fee
+			stakes[fromAddr] = currentStake - tx.Amount
 			continue
 		}
 
@@ -416,6 +445,11 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 		toInclude = append(toInclude, tx)
 		nonces[fromAddr] = tx.Nonce
 		balances[fromAddr] = currentBalance - totalCost
+
+		// Якщо це Stake — оновлюємо локальний стейк для наступних транзакцій у цьому ж блоці
+		if bytes.Equal(tx.To, []byte(STAKE)) {
+			stakes[fromAddr] += tx.Amount
+		}
 	}
 	return toInclude, toDrop
 }
@@ -423,6 +457,7 @@ func (n *Node) getValidTransactions(txs []*chain.Transaction) ([]*chain.Transact
 func (n *Node) checkBalances(txs []*chain.Transaction) error {
 	nonces := make(map[string]uint32)
 	balances := make(map[string]int64)
+	stakes := make(map[string]int64)
 
 	for _, tx := range txs {
 		if n.isSystemAddr(tx.From) || bytes.Equal(tx.To, []byte(FINEWALLET)) {
@@ -437,22 +472,49 @@ func (n *Node) checkBalances(txs []*chain.Transaction) error {
 			}
 			nonces[fromAddr] = wallet.Nonce
 			balances[fromAddr] = wallet.Balance
+
+			validator, _ := n.bs.GetValidator(tx.From)
+			if validator != nil {
+				stakes[fromAddr] = validator.Amount
+			} else {
+				stakes[fromAddr] = 0
+			}
 		}
 
 		currentNonce := nonces[fromAddr]
 		currentBalance := balances[fromAddr]
+		currentStake := stakes[fromAddr]
 
 		if tx.Nonce != currentNonce+1 {
 			return fmt.Errorf("невірний Nonce транзакції: %d, очікується %d (гаманець: %x)", tx.Nonce, currentNonce+1, tx.From)
 		}
 
+		// Спеціальна логіка для Unstake
+		if bytes.Equal(tx.To, []byte(UNSTAKE)) {
+			if currentStake < tx.Amount {
+				return fmt.Errorf("недостатньо стейку для unstake: %d < %d (адреса: %x)", currentStake, tx.Amount, tx.From)
+			}
+			if currentBalance < tx.Fee {
+				return fmt.Errorf("недостатньо балансу для комісії unstake: %d < %d (адреса: %x)", currentBalance, tx.Fee, tx.From)
+			}
+
+			nonces[fromAddr] = tx.Nonce
+			balances[fromAddr] = currentBalance - tx.Fee
+			stakes[fromAddr] = currentStake - tx.Amount
+			continue
+		}
+
 		totalCost := tx.Amount + tx.Fee
 		if currentBalance < totalCost {
-			return fmt.Errorf("недостатній баланс: %d < %d", currentBalance, totalCost)
+			return fmt.Errorf("недостатній баланс: %d < %d (адреса: %x)", currentBalance, totalCost, tx.From)
 		}
 
 		nonces[fromAddr] = tx.Nonce
 		balances[fromAddr] = currentBalance - totalCost
+
+		if bytes.Equal(tx.To, []byte(STAKE)) {
+			stakes[fromAddr] += tx.Amount
+		}
 	}
 	return nil
 }

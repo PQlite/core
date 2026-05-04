@@ -15,7 +15,7 @@ import (
 func (n *Node) handleStreamMessages(stream network.Stream) {
 	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-	log.Info().Str("from", stream.Conn().RemoteMultiaddr().String()).Msg("Отримано новий прямий потік")
+	log.Debug().Str("from", stream.Conn().RemoteMultiaddr().String()).Msg("Отримано новий прямий потік")
 
 	defer stream.Close()
 

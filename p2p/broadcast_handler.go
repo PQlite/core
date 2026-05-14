@@ -47,9 +47,9 @@ func (n *Node) handleBroadcastMessages() {
 
 		switch message.Type {
 		case MsgNewTransaction:
-			go n.handleMsgNewTransaction(message.Data)
+			n.handleMsgNewTransaction(message.Data)
 		case MsgVote:
-			go n.handleMsgVote(message.Data)
+			n.handleMsgVote(message.Data)
 		default:
 			n.messagesQueue <- message
 		}
@@ -113,7 +113,7 @@ func (n *Node) handleMsgNewTransaction(data []byte) {
 	}
 
 	log.Info().Int64("latency", now-tx.Timestamp).Msg("отримано транзакцію")
-	
+
 	// Захист від Mempool DOS: перевіряємо чи Nonce не занадто далеко в майбутньому
 	wallet, _ := n.bs.GetWalletByAddress(tx.From)
 	if tx.Nonce > wallet.Nonce+10 {
@@ -150,7 +150,7 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 			log.Debug().Uint32("height", block.Height).Msg("отримано дублікат блоку, ігноруємо")
 			return
 		}
-		
+
 		// Якщо висота занадто велика — можливо ми відстали
 		if strings.Contains(err.Error(), "висота") {
 			log.Debug().Err(err).Msg("блок з іншою висотою, ігноруємо (запущено синхронізацію)")
@@ -190,20 +190,35 @@ func (n *Node) handleMsgBlockProposal(data []byte) {
 
 	var votersList []chain.Vote
 	var acceptedAmount int64
+	seenVoters := make(map[string]struct{})
 
 	voteTimeout := time.NewTimer(30 * time.Second)
 	defer voteTimeout.Stop()
 
 collectVotes:
 	for {
+		if !bytes.Equal(block.Proposer, n.nextProposer.Address) || block.Round != n.currentRound {
+			log.Debug().
+				Uint32("block_round", block.Round).
+				Uint32("local_round", n.currentRound).
+				Msg("стан блоку змінився під час збору голосів")
+			return
+		}
+
 		select {
 		case v := <-n.vote:
 			if err = crypto.Verify(v.Pub, blockBytes, v.Signature); err != nil {
 				log.Info().Msg("голос не є валідним")
 				continue
 			}
+			voterID := string(v.Pub)
+			if _, exists := seenVoters[voterID]; exists {
+				log.Debug().Hex("voter", v.Pub).Msg("дубльований голос ігнорується")
+				continue
+			}
 			contains, validator := containsInValidators(v.Pub, allValidators)
 			if contains {
+				seenVoters[voterID] = struct{}{}
 				acceptedAmount += validator.Amount
 				votersList = append(votersList, v)
 			}
@@ -246,7 +261,7 @@ func (n *Node) handleMsgVote(data []byte) {
 }
 
 func (n *Node) handleMsgCommit(data []byte) {
-	go drainChannel(n.vote)
+	drainChannel(n.vote)
 
 	var commit Commit
 	if err := json.Unmarshal(data, &commit); err != nil {
@@ -266,9 +281,15 @@ func (n *Node) handleMsgCommit(data []byte) {
 	}
 
 	var acceptedStake int64
+	seenVoters := make(map[string]struct{})
 	for _, v := range commit.Voters {
 		if err := v.Verify(&commit.Block); err != nil {
 			log.Error().Hex("voter", v.Pub).Msg("помилка підтвердження підпису голосу")
+			return
+		}
+		voterID := string(v.Pub)
+		if _, exists := seenVoters[voterID]; exists {
+			log.Error().Hex("voter", v.Pub).Msg("дубльований голос у commit")
 			return
 		}
 		contains, validator := containsInValidators(v.Pub, allValidators)
@@ -276,6 +297,7 @@ func (n *Node) handleMsgCommit(data []byte) {
 			log.Error().Hex("voter", v.Pub).Msg("голос не був в списку валідаторів")
 			return
 		}
+		seenVoters[voterID] = struct{}{}
 		acceptedStake += validator.Amount
 	}
 
@@ -370,7 +392,7 @@ func (n *Node) handleMsgReject(data []byte) {
 // advanceRound збільшує номер раунду і вибирає нового proposer-а.
 // Викликається коли поточний proposer зробив поганий блок або не відповів.
 func (n *Node) advanceRound() {
-	go drainChannel(n.vote)
+	drainChannel(n.vote)
 	oldProposer := n.nextProposer.Address
 	oldRound := n.currentRound
 	n.currentRound++

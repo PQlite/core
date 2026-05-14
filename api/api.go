@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +30,7 @@ type Server struct {
 	bs      *database.BlockStorage
 	clients map[*websocket.Conn]bool
 	mu      sync.Mutex
+	done    chan struct{}
 }
 
 // NewServer створює новий екземпляр API-сервера.
@@ -78,6 +78,7 @@ func NewServer(node *p2p.Node, mempool *chain.Mempool, bs *database.BlockStorage
 		mempool: mempool,
 		bs:      bs,
 		clients: make(map[*websocket.Conn]bool),
+		done:    make(chan struct{}),
 	}
 
 	go server.runWebSocketPoller()
@@ -124,14 +125,10 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/tx/:hash", s.handleGetTxStatus)
 	s.app.Post("/tx", s.handlePostTx)
 
-	// щоб сервер не відповідав усіляким підораскам
 	s.app.Use(func(c *fiber.Ctx) error {
-		time.Sleep(100 * time.Second)
-		hijacker, ok := c.Context().Conn().(*net.TCPConn)
-		if ok {
-			_ = hijacker.Close()
-		}
-		return nil
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "not found",
+		})
 	})
 }
 
@@ -349,17 +346,22 @@ func (s *Server) runWebSocketPoller() {
 		lastHeight = lastBlock.Height
 	}
 
-	for range ticker.C {
-		// Перевірка нових блоків
-		lastBlock, err := s.bs.GetLastBlock()
-		if err == nil && lastBlock.Height > lastHeight {
-			lastHeight = lastBlock.Height
+	for {
+		select {
+		case <-ticker.C:
+			// Перевірка нових блоків
+			lastBlock, err := s.bs.GetLastBlock()
+			if err == nil && lastBlock.Height > lastHeight {
+				lastHeight = lastBlock.Height
 
-			s.mu.Lock()
-			for client := range s.clients {
-				s.sendFullState(client)
+				s.mu.Lock()
+				for client := range s.clients {
+					s.sendFullState(client)
+				}
+				s.mu.Unlock()
 			}
-			s.mu.Unlock()
+		case <-s.done:
+			return
 		}
 	}
 }
@@ -413,5 +415,20 @@ func (s *Server) sendFullState(c *websocket.Conn) {
 }
 // Start запускає HTTP-сервер.
 func (s *Server) Start() {
-	log.Fatal().Err(s.app.Listen(":8081")).Msg("помилка запуску http серверу")
+	if err := s.app.Listen(":8081"); err != nil {
+		log.Error().Err(err).Msg("помилка запуску http серверу")
+	}
+}
+
+func (s *Server) Shutdown() error {
+	close(s.done)
+
+	s.mu.Lock()
+	for client := range s.clients {
+		_ = client.Close()
+		delete(s.clients, client)
+	}
+	s.mu.Unlock()
+
+	return s.app.Shutdown()
 }

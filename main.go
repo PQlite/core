@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -34,7 +33,8 @@ func main() {
 	}
 
 	mempool := chain.Mempool{}
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	node, err := p2p.NewNode(ctx, &mempool, bs)
 	if err != nil {
@@ -46,10 +46,12 @@ func main() {
 	go server.Start()
 	go node.Start()
 
-	// wait for a SIGINT or SIGTERM signal
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	<-ch
-	ctx.Done()
+	<-ctx.Done()
+	if err := server.Shutdown(); err != nil {
+		log.Error().Err(err).Msg("помилка зупинки http серверу")
+	}
+	if err := bs.Close(); err != nil {
+		log.Error().Err(err).Msg("помилка закриття бази даних")
+	}
 	fmt.Println("Received signal, shutting down...")
 }
